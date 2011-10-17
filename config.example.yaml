@@ -1,0 +1,14 @@
+# What server(s) to connect to, and credentials/channels to join by default.
+servers:
+  irc.foonetic.net:
+    port: 6667
+    nick: Kitn
+    name: Aaeriele
+    channels:
+      - '#kitntest'
+    modes: '+B'
+    auth:
+      to: NickServ
+      msg: 'identify <password>'
+
+sigil: '.'
