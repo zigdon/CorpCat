@@ -294,7 +294,7 @@ class KitnHandler(DefaultCommandHandler):
 	def _cmd_ABOUT(self, nick, chan, arg):
 		"""about - Provides basic information about this bot."""
 		self._msg(chan,
-			"I'm an IRC bot. My owner is Aaeriele and her owner is DaBigCheez.",
+			"I'm an IRC bot. My owner is Aaeriele and her owner is DaBigCheez.\nMore info is available at http://git.aiiane.com/kitn",
 		)
 
 	def _cmd_AT(self, nick, chan, arg):
