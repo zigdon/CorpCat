@@ -202,7 +202,7 @@ class KitnHandler(DefaultCommandHandler):
 						)
 					title_segment_letters = [s for s in title_segment_letters if s]
 
-					f = final_url.lower()
+					f = url.lower()
 					title_segments_found = [s for s in title_segment_letters if s in f]
 
 					found_len = len(''.join(title_segments_found))
