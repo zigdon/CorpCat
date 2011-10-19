@@ -304,7 +304,7 @@ class KitnHandler(DefaultCommandHandler):
 		db.commit()
 
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
-		self._msg(chan, "%s: reminder #%s added at %s." % (nick, r_id, dateobj.strftime('%x %X %Z')))
+		self._msg(chan, "%s: reminder #%s added for %s." % (nick, r_id, dateobj.strftime('%x %X %Z')))
 
 	def _cmd_CANCEL(self, nick, chan, arg):
 		"""cancel - Cancels the specified reminder."""
@@ -379,7 +379,7 @@ class KitnHandler(DefaultCommandHandler):
 		db.commit()
 
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
-		self._msg(chan, "%s: reminder #%s added at %s PST." % (nick, r_id,
+		self._msg(chan, "%s: reminder #%s added for %s PST." % (nick, r_id,
 			datetime.datetime.fromtimestamp(timestamp).strftime('%x %X')))
 
 	@admin_only
