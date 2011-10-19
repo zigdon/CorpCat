@@ -15,9 +15,12 @@ from urlparse import urlparse
 from BeautifulSoup import BeautifulSoup as soup
 from oyoyo.client import IRCApp, IRCClient
 from oyoyo.cmdhandler import DefaultCommandHandler
-from oyoyo import helpers
+from oyoyo import helpers, ircevents
 import pytz
 import yaml
+
+ircevents.numeric_events["335"] = 'whoisbot'
+ircevents.all_events.append('whoisbot')
 
 logging.basicConfig(level=logging.INFO)
 app = None
@@ -38,6 +41,10 @@ class KitnHandler(DefaultCommandHandler):
 
 	def __init__(self, *args, **kwargs):
 		super(KitnHandler, self).__init__(*args, **kwargs)
+
+		# Keep track of known bots
+		self.KNOWN_NICKS = set([self.client.nick])
+		self.KNOWN_BOTS = set([self.client.nick])
 
 		# Common timezones
 		self.TIMEZONES = {
@@ -128,6 +135,17 @@ class KitnHandler(DefaultCommandHandler):
 			db.execute("DELETE FROM reminders WHERE id = ?", (r_id,))
 		db.commit()
 
+	def whoisbot(self, nick, chan, user, msg):
+		"""Add a bot to the known bots list based on WHOIS."""
+		logging.info("Adding '%s' to the known bots list." % user)
+		self.KNOWN_BOTS.add(user)
+
+	def whoisoperator(self, nick, chan, user, msg):
+		"""Check and see if this is a network service, if so, add it to known bots."""
+		if msg == 'is a Network Service':
+			logging.info("Adding '%s' to the known bots list." % user)
+			self.KNOWN_BOTS.add(user)
+
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
 		s = config['servers'][self.client.host]
@@ -153,13 +171,31 @@ class KitnHandler(DefaultCommandHandler):
 	
 		logging.info("Completed initial connection actions for %s." % self.client.host)
 
+	def _is_nick_ignored(self, nick):
+		"""Check to see if we should be ignoring this nick."""
+
+		just_nick = nick.split('!')[0]
+		if just_nick not in self.KNOWN_NICKS:
+			self.client.send("WHOIS", just_nick)
+			self.KNOWN_NICKS.add(just_nick)
+		elif just_nick in self.KNOWN_BOTS:
+			return True
+
+		return False
+
 	def privmsg(self, nick, chan, msg):
-		logging.debug("[message] %s -> %s: %s" % (nick, chan, msg))
-		self._parse_line(nick, chan, msg)
+		if self._is_nick_ignored(nick):
+			logging.debug("[ignored message] %s -> %s" % (nick, chan))
+		else:
+			logging.debug("[message] %s -> %s: %s" % (nick, chan, msg))
+			self._parse_line(nick, chan, msg)
 
 	def notice(self, nick, chan, msg):
-		logging.debug("[notice] %s -> %s: %s" % (nick, chan, msg))
-		self._parse_line(nick, chan, msg)
+		if self._is_nick_ignored(nick):
+			logging.debug("[ignored notice] %s -> %s" % (nick, chan))
+		else:
+			logging.debug("[notice] %s -> %s: %s" % (nick, chan, msg))
+			self._parse_line(nick, chan, msg)
 
 	def _msg(self, chan, msg):
 		helpers.msg(self.client, chan, msg)
@@ -438,6 +474,11 @@ class KitnHandler(DefaultCommandHandler):
 	@admin_only
 	def _cmd_QUIT(self, nick, chan, arg):
 		helpers.quit(self.client, 'Shutting down...')
+
+	@admin_only
+	def _cmd_SRV(self, nick, chan, arg):
+		if arg:
+			self.client.send(arg)
 
 	def _cmd_WHOAMI(self, nick, chan, arg):
 		"""whoami - Responds with the full nickstring for the user who runs it."""
