@@ -52,11 +52,11 @@ class KitnHandler(DefaultCommandHandler):
 					(https?://|www\.)    
 					([a-zA-Z0-9-]+\.)+   # domain segments
 					[a-zA-Z]{2,4}        # TLD
-										 # We don't require 'nice' URLs to have a path (/ can be implied)
+					                     # We don't require 'nice' URLs to have a path (/ can be implied)
 				|
 					# URLs that don't start with a 'nice' prefix
 
-  					([a-zA-Z0-9-]+\.)+   # domain segments
+					([a-zA-Z0-9-]+\.)+   # domain segments
 					[a-zA-Z]{2,4}        # TLD
 					(?=/)                # These URLs are required to at least have a /
 				)
