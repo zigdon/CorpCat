@@ -215,7 +215,7 @@ class KitnHandler(DefaultCommandHandler):
 					if found_len < 0.6 * total_len:
 						logging.info("Reporting title '%s' (found: %s, total: %s)" % (
 							title_tag.string[:100], found_len, total_len))
-						report_components.append('"%s"' % title_tag.string[:100])
+						report_components.append('"%s"' % ' '.join(title_tag.string.split())[:100])
 					else:
 						logging.info("Not reporting title '%s' (found: %s, total: %s)" % (
 							title_tag.string[:100], found_len, total_len))
