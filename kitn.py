@@ -232,13 +232,15 @@ class KitnHandler(DefaultCommandHandler):
 					found_len = len(''.join(title_segments_found))
 					total_len = len(''.join(title_segment_letters))
 
+					condensed_title = ' '.join(title_tag.string.split())[:100]
+
 					if found_len < 0.6 * total_len:
 						logging.info("Reporting title '%s' (found: %s, total: %s)" % (
-							title_tag.string[:100], found_len, total_len))
-						report_components.append('"%s"' % ' '.join(title_tag.string.split())[:100])
+							condensed_title, found_len, total_len))
+						report_components.append('"%s"' % condensed_title)
 					else:
 						logging.info("Not reporting title '%s' (found: %s, total: %s)" % (
-							title_tag.string[:100], found_len, total_len))
+							condensed_title, found_len, total_len))
 						
 
 			# Only announce the url if something caught our attention
