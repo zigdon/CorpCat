@@ -201,6 +201,12 @@ class KitnHandler(DefaultCommandHandler):
 	def _msg(self, chan, msg):
 		helpers.msg(self.client, chan, msg)
 
+	def _ctcp(self, chan, msg):
+		self._msg(chan, "\x01%s\x01" % msg)
+
+	def _emote(self, chan, msg):
+		self._ctcp(chan, "ACTION %s" % msg)
+
 	def _parse_line(self, nick, chan, msg):	
 		"""Parse an incoming line of chat for commands and URLs."""
 
@@ -488,6 +494,10 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Leaving channel %s." % arg)
 		helpers.part(self.client, arg)
+
+	def _cmd_PET(self, nick, chan, arg):
+		"""pet - Pet the kitn."""
+		self._emote(chan, "purrs")
 
 	def _cmd_PRONOUNS(self, nick, chan, arg):
 		"""pronouns - Get or set preferred pronouns for a nick."""
