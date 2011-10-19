@@ -15,3 +15,6 @@ sigil: '.'
 
 database:
   path: 'kitn.sqlite3'
+
+urlannounce:
+  - '#kitntest'

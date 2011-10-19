@@ -176,6 +176,11 @@ class KitnHandler(DefaultCommandHandler):
 
 	def _url_announce(self, chan, url):
 		"""Announce the info for a detected URL in the channel it was detected in."""
+
+		if chan not in config['urlannounce']:
+			logging.info("Not announcing URL in channel %s [not in urlannounce list]." % chan)
+			return
+
 		try:
 			if not url.startswith("http"):
 				url = "http://%s" % url
