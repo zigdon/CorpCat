@@ -1,10 +1,12 @@
 #!/usr/bin/env python
+import functools
 import json
 import logging
 import random
 import re
 import sqlite3
 import string
+import sys
 import threading
 import time
 import urllib2
@@ -17,8 +19,19 @@ from oyoyo import helpers
 import yaml
 
 logging.basicConfig(level=logging.INFO)
+app = None
 config = None
 db = None
+
+def admin_only(f):
+	@functools.wraps(f)
+	def wrapper(self, nick, chan, arg):
+		if nick == 'Aaeriele!aiiane@hide-F3E0B19.aiiane.com':
+			return f(self, nick, chan, arg)
+		else:
+			return self._msg(chan, "You are not allowed to run that command.")
+	return wrapper
+			
 
 class KitnHandler(DefaultCommandHandler):
 
@@ -219,6 +232,27 @@ class KitnHandler(DefaultCommandHandler):
 			"I'm an IRC bot. My owner is Aaeriele and her owner is DaBigCheez.",
 		)
 
+	def _cmd_CANCEL(self, nick, chan, arg):
+		"""cancel - Cancels the specified reminder."""
+		usage = lambda: self._msg(chan, "Usage: cancel <reminder #>")
+
+		if not arg:
+			return usage()
+
+		try:
+			r_id = int(arg)
+		except (TypeError, ValueError):
+			return usage()
+
+		nick = nick.split('!')[0]
+		result = db.execute("DELETE FROM reminders WHERE id = ? AND nick = ?", (r_id, nick))
+		db.commit()
+
+		if result.rowcount:
+			return self._msg(chan, "%s: cancelled reminder #%s." % (nick, r_id))
+		else:
+			return self._msg(chan, "%s: unable to cancel reminder #%s (non-existant? not yours?)." % (nick, r_id))
+
 	def _cmd_CHOOSE(self, nick, chan, arg):
 		"""choose - Given a set of items, pick one randomly."""
 		usage = lambda: self._msg(chan, "Usage: choose <item> <item> ...")
@@ -270,26 +304,30 @@ class KitnHandler(DefaultCommandHandler):
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
 		self._msg(chan, "%s: reminder #%s added." % (nick, r_id))
 
-	def _cmd_CANCEL(self, nick, chan, arg):
-		"""cancel - Cancels the specified reminder."""
-		usage = lambda: self._msg(chan, "Usage: cancel <reminder #>")
+	@admin_only
+	def _cmd_JOIN(self, nick, chan, arg):
+		"""part - Make the bot join the specified channel."""
+		usage = lambda: self._msg(chan, "Usage: join <channel>")
 
 		if not arg:
 			return usage()
 
-		try:
-			r_id = int(arg)
-		except (TypeError, ValueError):
-			return usage()
+		self._msg(chan, "Joining channel %s." % arg)
+		helpers.join(self.client, arg)
 
-		nick = nick.split('!')[0]
-		result = db.execute("DELETE FROM reminders WHERE id = ? AND nick = ?", (r_id, nick))
-		db.commit()
+	@admin_only
+	def _cmd_PART(self, nick, chan, arg):
+		"""part - Make the bot leave the specified channel, or if not specified, the channel the message was in."""
+		usage = lambda: self._msg(chan, "Usage: part [<channel>]")
 
-		if result.rowcount:
-			return self._msg(chan, "%s: cancelled reminder #%s." % (nick, r_id))
-		else:
-			return self._msg(chan, "%s: unable to cancel reminder #%s (non-existant? not yours?)." % (nick, r_id))
+		if not arg:
+			if chan.startswith('#'):
+				arg = chan
+			else:
+				return usage()
+
+		self._msg(chan, "Leaving channel %s." % arg)
+		helpers.part(self.client, arg)
 
 	def _cmd_PRONOUNS(self, nick, chan, arg):
 		"""pronouns - Get or set preferred pronouns for a nick."""
@@ -316,6 +354,14 @@ class KitnHandler(DefaultCommandHandler):
 			db.rollback()
 		else:
 			return usage()
+
+	@admin_only
+	def _cmd_QUIT(self, nick, chan, arg):
+		helpers.quit(self.client, 'Shutting down...')
+
+	def _cmd_WHOAMI(self, nick, chan, arg):
+		"""whoami - Responds with the full nickstring for the user who runs it."""
+		self._msg(chan, nick)
 
 	def _cmd_XKCD(self, nick, chan, arg):
 		"""xkcd - Provides a link to the specified XKCD comic, or the most recent if not specified."""
@@ -369,6 +415,6 @@ if __name__ == '__main__':
 			real_name=conf['name'],
 		)
 		clients[server] = client
-		app.addClient(client)
+		app.addClient(client, autoreconnect=True)
 
 	app.run()
