@@ -6,7 +6,6 @@ import logging
 import random
 import re
 import sqlite3
-import string
 import threading
 import time
 import urllib2
@@ -258,11 +257,7 @@ class KitnHandler(DefaultCommandHandler):
 				title_tag = parsed.find('title')
 				if title_tag:
 					title_segments = re.split(r'[^a-z]+', title_tag.string[:100].lower())
-					title_segment_letters = (
-							''.join(L for L in segment.lower() if L in string.lowercase)
-							for segment in title_segments
-						)
-					title_segment_letters = [s for s in title_segment_letters if s]
+					title_segment_letters = [s for s in title_segments if s]
 
 					f = url.lower()
 					title_segments_found = [s for s in title_segment_letters if s in f]
@@ -320,6 +315,8 @@ class KitnHandler(DefaultCommandHandler):
 
 		if am_pm in ('pm', 'PM') and hour < 12:
 			hour += 12
+		elif am_pm in ('am', 'AM') and hour == 12:
+			hour = 0
 
 		if hour > 23 or minute > 59:
 			return self._msg(chan, "%d:%d is not a valid time." % (hour, minute))
@@ -376,6 +373,20 @@ class KitnHandler(DefaultCommandHandler):
 			return usage()
 		else:
 			self._msg(chan, "%s: %s" % (nick.split('!')[0], random.choice(items)))
+
+	def _cmd_FORGET(self, nick, chan, arg):
+		"""forget - Remove a factoid from the bot's knowledge."""
+		usage = lambda: self._msg("Usage: forget <keyword>")
+
+		if not arg:
+			return usage()
+
+		result = db.execute("DELETE FROM factoids WHERE keyword = ?", (arg,))
+		db.commit()
+		if result.rowcount:
+			self._msg(chan, "Removed factoid '%s'." % (arg,))
+		else:
+			self._msg(chan, "No factoid '%s' found." % (arg,))
 
 	def _cmd_IN(self, nick, chan, arg):
 		"""in - Set up a reminder that occurs after a specified period of time."""
@@ -442,6 +453,28 @@ class KitnHandler(DefaultCommandHandler):
 		self._msg(chan, "Joining channel %s." % arg)
 		helpers.join(self.client, arg)
 
+	def _cmd_LEARN(self, nick, chan, arg):
+		"""learn - Teach the bot a factoid identified by a keyword."""
+		usage = lambda: self._msg(chan, "Usage: learn <keyword> <text>")
+
+		if not arg:
+			return usage()
+
+		args = arg.split()
+		if len(args) < 2:
+			return usage()
+
+		try:
+			db.execute("INSERT INTO factoids (keyword, content, nick, timestamp) VALUES (?,?,?,?)", (
+				args[0], ' '.join(args[1:]), nick.split('!')[0], time.time(),
+			))
+			db.commit()
+		except sqlite3.IntegrityError:
+			return self._msg(chan, "The factoid '%s' already exists.\n"
+				"(Use the 'relearn' command to overwrite it, or the 'forget' command to remove it.)" % args[0])
+
+		self._msg(chan, "Factoid '%s' added." % args[0])
+
 	@admin_only
 	def _cmd_PART(self, nick, chan, arg):
 		"""part - Make the bot leave the specified channel, or if not specified, the channel the message was in."""
@@ -485,6 +518,38 @@ class KitnHandler(DefaultCommandHandler):
 	@admin_only
 	def _cmd_QUIT(self, nick, chan, arg):
 		helpers.quit(self.client, 'Shutting down...')
+
+	def _cmd_RECALL(self, nick, chan, arg):
+		"""recall - Display the text of a factoid, if it exists."""
+		usage = lambda: self._msg("Usage: recall <keyword>")
+
+		if not arg:
+			return usage()
+
+		result = db.execute("SELECT keyword, content, nick, timestamp from factoids WHERE keyword = ?", (arg,)).fetchone()
+		db.rollback()
+		if not result:
+			self._msg(chan, "%s: I don't know '%s'." % (nick.split('!')[0], arg))
+		else:
+			self._msg(chan, "%s: %s" % (nick.split('!')[0], result[1]))
+
+	def _cmd_RELEARN(self, nick, chan, arg):
+		"""relearn - Teach the bot a factoid identified by a keyword, even if it already exists."""
+		usage = lambda: self._msg(chan, "Usage: relearn <keyword> <text>")
+
+		if not arg:
+			return usage()
+
+		args = arg.split()
+		if len(args) < 2:
+			return usage()
+
+		db.execute("INSERT OR REPLACE INTO factoids (keyword, content, nick, timestamp) VALUES (?,?,?,?)", (
+			args[0], ' '.join(args[1:]), nick.split('!')[0], time.time(),
+		))
+		db.commit()
+
+		self._msg(chan, "Factoid '%s' added." % args[0])
 
 	@admin_only
 	def _cmd_SRV(self, nick, chan, arg):
@@ -532,6 +597,14 @@ if __name__ == '__main__':
 			nick TEXT,
 			chan TEXT,
 			content TEXT
+		)""")
+	db.commit()
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS factoids (
+			keyword TEXT PRIMARY KEY,
+			content TEXT,
+			nick TEXT,
+			timestamp INTEGER
 		)""")
 	db.commit()
 
