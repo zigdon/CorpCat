@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import datetime
 import functools
 import json
 import logging
@@ -15,6 +16,7 @@ from BeautifulSoup import BeautifulSoup as soup
 from oyoyo.client import IRCApp, IRCClient
 from oyoyo.cmdhandler import DefaultCommandHandler
 from oyoyo import helpers
+import pytz
 import yaml
 
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +38,24 @@ class KitnHandler(DefaultCommandHandler):
 
 	def __init__(self, *args, **kwargs):
 		super(KitnHandler, self).__init__(*args, **kwargs)
+
+		# Common timezones
+		self.TIMEZONES = {
+			'UTC': pytz.timezone('UTC'),
+			'UCT': pytz.timezone('UCT'),
+			'GMT': pytz.timezone('GMT'),
+			'EST': pytz.timezone('America/New_York'),
+			'EDT': pytz.timezone('America/New_York'),
+			'CST': pytz.timezone('America/Chicago'),
+			'CDT': pytz.timezone('America/Chicago'),
+			'MST': pytz.timezone('America/Boise'),
+			'MDT': pytz.timezone('America/Boise'),
+			'PST': pytz.timezone('America/Los_Angeles'),
+			'PDT': pytz.timezone('America/Los_Angeles'),
+		}
+		for offset in range(13):
+			self.TIMEZONES['GMT+%d' % offset] = pytz.timezone('Etc/GMT+%d' % offset)
+			self.TIMEZONES['GMT-%d' % offset] = pytz.timezone('Etc/GMT-%d' % offset)
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
@@ -237,6 +257,55 @@ class KitnHandler(DefaultCommandHandler):
 			"I'm an IRC bot. My owner is Aaeriele and her owner is DaBigCheez.",
 		)
 
+	def _cmd_AT(self, nick, chan, arg):
+		"""at - Set up a reminder that occurs at the specified time."""
+		usage = lambda: self._msg(chan, "Usage: at <time> <timezone> <text>")
+
+		if not arg:
+			return usage()
+
+		m = re.match(r"(\d+(?::\d+)?)\s?(am|AM|pm|PM)?\s+(\S+)\s+(.+)$", arg)
+		if not m:
+			return usage()
+
+		time_val = m.group(1).split(':', 1)
+		am_pm = m.group(2)
+		tz_string = m.group(3)
+		content = m.group(4)
+
+		if len(time_val) == 1:
+			hour, minute = int(time_val[0]), 0
+		else:
+			hour, minute = int(time_val[0]), int(time_val[1])
+
+		if am_pm in ('pm', 'PM') and hour < 12:
+			hour += 12
+
+		if hour > 23 or minute > 59:
+			return self._msg(chan, "%d:%d is not a valid time." % (hour, minute))
+
+		if tz_string in self.TIMEZONES:
+			timezone = self.TIMEZONES[tz_string]
+		else:
+			try:
+				timezone = pytz.timezone(tz_string)
+			except pytz.exceptions.UnknownTimeZoneError:
+				return self._msg(chan, "'%s' is not a recognized timezone." % tz_string)
+
+		dateobj = datetime.datetime.now(timezone).replace(hour=hour, minute=minute, second=0)
+		if dateobj < datetime.datetime.now(timezone):
+			dateobj += datetime.timedelta(days=1)
+
+		timestamp = time.mktime(dateobj.astimezone(pytz.timezone('America/Los_Angeles')).timetuple())
+		nick = nick.split('!')[0]
+		result = db.execute("INSERT INTO reminders (nick, chan, timestamp, content) VALUES (?,?,?,?)",
+			(nick, chan, timestamp, content))
+		r_id = result.lastrowid
+		db.commit()
+
+		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
+		self._msg(chan, "%s: reminder #%s added at %s." % (nick, r_id, dateobj.strftime('%x %X %Z')))
+
 	def _cmd_CANCEL(self, nick, chan, arg):
 		"""cancel - Cancels the specified reminder."""
 		usage = lambda: self._msg(chan, "Usage: cancel <reminder #>")
@@ -310,7 +379,8 @@ class KitnHandler(DefaultCommandHandler):
 		db.commit()
 
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
-		self._msg(chan, "%s: reminder #%s added." % (nick, r_id))
+		self._msg(chan, "%s: reminder #%s added at %s PST." % (nick, r_id,
+			datetime.datetime.fromtimestamp(timestamp).strftime('%x %X')))
 
 	@admin_only
 	def _cmd_JOIN(self, nick, chan, arg):
