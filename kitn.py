@@ -267,6 +267,9 @@ class KitnHandler(DefaultCommandHandler):
 		"""in - Set up a reminder that occurs after a specified period of time."""
 		usage = lambda: self._msg(chan, "Usage: in <amount> <time unit> <text>")
 
+		if not arg:
+			return usage()
+
 		args = arg.split()
 		if len(args) < 3:
 			return usage()
