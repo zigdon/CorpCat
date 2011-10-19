@@ -135,11 +135,11 @@ class KitnHandler(DefaultCommandHandler):
 		logging.info("Completed initial connection actions for %s." % self.client.host)
 
 	def privmsg(self, nick, chan, msg):
-		logging.info("[message] %s -> %s: %s" % (nick, chan, msg))
+		logging.debug("[message] %s -> %s: %s" % (nick, chan, msg))
 		self._parse_line(nick, chan, msg)
 
 	def notice(self, nick, chan, msg):
-		logging.info("[notice] %s -> %s: %s" % (nick, chan, msg))
+		logging.debug("[notice] %s -> %s: %s" % (nick, chan, msg))
 		self._parse_line(nick, chan, msg)
 
 	def _msg(self, chan, msg):
@@ -155,6 +155,7 @@ class KitnHandler(DefaultCommandHandler):
 		# See if this is a command we recognize
 		m = self.COMMAND_RE.match(msg)
 		if m:
+			logging.info("[cmd] %s -> %s: %s" % (nick, chan, msg))
 			cmd = m.group(1)
 			arg = m.group(2)
 			cmd_func = '_cmd_%s' % cmd.upper()
@@ -171,7 +172,7 @@ class KitnHandler(DefaultCommandHandler):
 		# See if there's a URL we should recognize
 		m = self.URL_RE.search(msg)
 		if m:
-			logging.info("Found url in %s: %s" % (chan, m.group()))
+			logging.info("[url] %s -> %s: %s" % (nick, chan, m.group()))
 			self._url_announce(chan, m.group())
 
 	def _url_announce(self, chan, url):
