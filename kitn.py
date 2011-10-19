@@ -192,7 +192,7 @@ class KitnHandler(DefaultCommandHandler):
 
 			if result.info().getmaintype() == 'text':
 				# Try parsing it with BeautifulSoup
-				parsed = soup(result.read())
+				parsed = soup(result.read(204800)) # Only 200k or less.
 				title_tag = parsed.find('title')
 				if title_tag:
 					title_segments = re.split(r'[^a-z]+', title_tag.string[:100].lower())
