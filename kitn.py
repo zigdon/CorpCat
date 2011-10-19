@@ -21,6 +21,8 @@ import yaml
 
 ircevents.numeric_events["335"] = 'whoisbot'
 ircevents.all_events.append('whoisbot')
+ircevents.numeric_events["307"] = 'whoisregistered'
+ircevents.all_events.append('whoisregistered')
 
 logging.basicConfig(level=logging.INFO)
 app = None
@@ -252,7 +254,7 @@ class KitnHandler(DefaultCommandHandler):
 
 			if result.info().getmaintype() == 'text':
 				# Try parsing it with BeautifulSoup
-				parsed = soup(result.read(204800)) # Only 200k or less.
+				parsed = soup(result.read(204800), convertEntities=soup.HTML_ENTITIES) # Only 200k or less.
 				title_tag = parsed.find('title')
 				if title_tag:
 					title_segments = re.split(r'[^a-z]+', title_tag.string[:100].lower())
@@ -383,7 +385,8 @@ class KitnHandler(DefaultCommandHandler):
 			return usage()
 
 		args = arg.split()
-		if len(args) < 3:
+
+		if len(args) < 2:
 			return usage()
 
 		# Attempt to parse the time specifier
@@ -394,6 +397,14 @@ class KitnHandler(DefaultCommandHandler):
 			'd': 86400, 'day': 86400, 'days': 86400,
 			'w': 604800, 'wk': 604800, 'wks': 604800, 'week': 604800, 'weeks': 604800,
 		}
+
+		m = re.match(r"(\d+)(\D+)$", args[0])
+		if m:
+			args[0:1] = [m.group(1), m.group(2)]
+
+		# After we've expanded any potential abbreviation, we expect 3 args
+		if len(args) < 3:
+			return usage()
 		
 		try:
 			time_amount = int(args[0])
