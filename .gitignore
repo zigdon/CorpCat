@@ -1,2 +1,4 @@
 *.py[co]
 /config.yaml
+*.sqlite3
+.*.swp

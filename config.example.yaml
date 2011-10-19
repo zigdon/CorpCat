@@ -12,3 +12,6 @@ servers:
       msg: 'identify <password>'
 
 sigil: '.'
+
+database:
+  path: 'kitn.sqlite3'
