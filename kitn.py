@@ -6,7 +6,6 @@ import random
 import re
 import sqlite3
 import string
-import sys
 import threading
 import time
 import urllib2
