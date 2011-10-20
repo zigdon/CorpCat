@@ -36,7 +36,7 @@ def admin_only(f):
 		else:
 			return self._msg(chan, "You are not allowed to run that command.")
 	return wrapper
-			
+
 
 class KitnHandler(DefaultCommandHandler):
 
@@ -77,7 +77,7 @@ class KitnHandler(DefaultCommandHandler):
 				(
 					# URLs that start with http://, https://, or www.
 
-					(https?://|www\.)    
+					(https?://|www\.)
 					([a-zA-Z0-9-]+\.)+   # domain segments
 					[a-zA-Z]{2,4}        # TLD
 					                     # We don't require 'nice' URLs to have a path (/ can be implied)
@@ -88,7 +88,7 @@ class KitnHandler(DefaultCommandHandler):
 					[a-zA-Z]{2,4}        # TLD
 					(?=/)                # These URLs are required to at least have a /
 				)
-				
+
 				# And then allow any kind of URL path, except for unpaired parens
 				# (we do this to make it easier to properly detect URLs that are
 				# inside parens, e.g. "Example site (www.foo.com/bar)"
@@ -163,13 +163,13 @@ class KitnHandler(DefaultCommandHandler):
 		# If default channels to join are specified, join them.
 		channels = s.get('channels', ())
 		for channel in channels:
-			helpers.join(client, channel)		
+			helpers.join(client, channel)
 
 		# If server-specific user modes are specified, set them.
 		modes = s.get('modes')
 		if modes:
 			client.send('MODE', s['nick'], modes)
-	
+
 		logging.info("Completed initial connection actions for %s." % self.client.host)
 
 	def _is_nick_ignored(self, nick):
@@ -185,6 +185,7 @@ class KitnHandler(DefaultCommandHandler):
 		return False
 
 	def privmsg(self, nick, chan, msg):
+		self._seen(nick, chan)
 		if self._is_nick_ignored(nick):
 			logging.debug("[ignored message] %s -> %s" % (nick, chan))
 		else:
@@ -192,11 +193,19 @@ class KitnHandler(DefaultCommandHandler):
 			self._parse_line(nick, chan, msg)
 
 	def notice(self, nick, chan, msg):
+		self._seen(nick, chan)
 		if self._is_nick_ignored(nick):
 			logging.debug("[ignored notice] %s -> %s" % (nick, chan))
 		else:
 			logging.debug("[notice] %s -> %s: %s" % (nick, chan, msg))
 			self._parse_line(nick, chan, msg)
+
+	def _seen(self, nick, chan):
+		"""Record new information for when this nick was seen."""
+		db.execute("INSERT OR REPLACE INTO seen (nick, chan, timestamp) VALUES (?,?,?)", (
+			nick.split('!')[0].lower(), chan, time.time(),
+		))
+		db.commit()
 
 	def _msg(self, chan, msg):
 		helpers.msg(self.client, chan, msg)
@@ -207,7 +216,7 @@ class KitnHandler(DefaultCommandHandler):
 	def _emote(self, chan, msg):
 		self._ctcp(chan, "ACTION %s" % msg)
 
-	def _parse_line(self, nick, chan, msg):	
+	def _parse_line(self, nick, chan, msg):
 		"""Parse an incoming line of chat for commands and URLs."""
 
 		# PMs to us should generally be replied to the other party, not ourself
@@ -280,7 +289,7 @@ class KitnHandler(DefaultCommandHandler):
 					else:
 						logging.info("Not reporting title '%s' (found: %s, total: %s)" % (
 							condensed_title, found_len, total_len))
-						
+
 
 			# Only announce the url if something caught our attention
 			if report_components:
@@ -370,6 +379,10 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			return self._msg(chan, "%s: unable to cancel reminder #%s (non-existant? not yours?)." % (nick, r_id))
 
+	def _cmd_CATNIP(self, nick, chan, arg):
+		"""catnip - Give the kitn catnip."""
+		self._emote(chan, "perks up and paws at %s excitedly" % nick.split('!')[0])
+
 	def _cmd_CHOOSE(self, nick, chan, arg):
 		"""choose - Given a set of items, pick one randomly."""
 		usage = lambda: self._msg(chan, "Usage: choose <item> <item> ...")
@@ -379,6 +392,10 @@ class KitnHandler(DefaultCommandHandler):
 			return usage()
 		else:
 			self._msg(chan, "%s: %s" % (nick.split('!')[0], random.choice(items)))
+
+	def _cmd_CUDDLE(self, nick, chan, arg):
+		"""cuddle - Ask the bot for a cuddle."""
+		self._emote(chan, "cuddles %s" % nick.split('!')[0])
 
 	def _cmd_FORGET(self, nick, chan, arg):
 		"""forget - Remove a factoid from the bot's knowledge."""
@@ -393,6 +410,10 @@ class KitnHandler(DefaultCommandHandler):
 			self._msg(chan, "Removed factoid '%s'." % (arg,))
 		else:
 			self._msg(chan, "No factoid '%s' found." % (arg,))
+
+	def _cmd_HUG(self, nick, chan, arg):
+		"""hug - Ask the bot for a hug."""
+		self._emote(chan, "hugs %s" % nick.split('!')[0])
 
 	def _cmd_IN(self, nick, chan, arg):
 		"""in - Set up a reminder that occurs after a specified period of time."""
@@ -422,7 +443,7 @@ class KitnHandler(DefaultCommandHandler):
 		# After we've expanded any potential abbreviation, we expect 3 args
 		if len(args) < 3:
 			return usage()
-		
+
 		try:
 			time_amount = int(args[0])
 		except (ValueError, TypeError):
@@ -561,6 +582,42 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
 
+	def _cmd_SEEN(self, nick, chan, arg):
+		"""seen - Get the time that a nick was last seen active."""
+		usage = lambda: self._msg(chan, "Usage: seen <nick or glob>")
+
+		if not arg:
+			return usage()
+
+		result = db.execute("""
+			SELECT nick, timestamp
+			FROM seen
+			WHERE nick GLOB ?
+			ORDER BY timestamp DESC
+			LIMIT 1
+			""", (arg.lower(),)).fetchone()
+		db.rollback()
+
+		if result:
+			secs_ago = int(time.time() - result[1])
+
+			if secs_ago < 60:
+				timeago = "%d second(s)" % secs_ago
+			elif secs_ago < 3600:
+				timeago = "%d minute(s)" % (secs_ago // 60)
+			elif secs_ago < 86400:
+				timeago = "%d hour(s)" % (secs_ago // 3600)
+			else:
+				timeago = "%d day(s)" % (secs_ago // 86400)
+
+			self._msg(chan, "%s was last seen %s ago." % (result[0], timeago))
+		else:
+			self._msg(chan, "I haven't seen anyone matching '%s'." % arg)
+
+	def _cmd_SNUGGLE(self, nick, chan, arg):
+		"""snuggle - Ask the bot for a snuggle."""
+		self._emote(chan, "snuggles %s" % nick.split('!')[0])
+
 	@admin_only
 	def _cmd_SRV(self, nick, chan, arg):
 		if arg:
@@ -599,7 +656,6 @@ if __name__ == '__main__':
 			nick TEXT PRIMARY KEY,
 			content TEXT
 		)""")
-	db.commit()
 	db.execute("""
 		CREATE TABLE IF NOT EXISTS reminders (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -608,12 +664,17 @@ if __name__ == '__main__':
 			chan TEXT,
 			content TEXT
 		)""")
-	db.commit()
 	db.execute("""
 		CREATE TABLE IF NOT EXISTS factoids (
 			keyword TEXT PRIMARY KEY,
 			content TEXT,
 			nick TEXT,
+			timestamp INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS seen (
+			nick TEXT PRIMARY KEY,
+			chan TEXT,
 			timestamp INTEGER
 		)""")
 	db.commit()
