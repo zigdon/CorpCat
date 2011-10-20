@@ -207,6 +207,13 @@ class KitnHandler(DefaultCommandHandler):
 		))
 		db.commit()
 
+	def _url(self, url, nick, chan):
+		"""Record when this URL was seen."""
+		db.execute("INSERT OR IGNORE INTO urls (url, nick, chan, timestamp) VALUES (?,?,?,?)", (
+			url, nick.split('!')[0], chan, time.time(),
+		))
+		db.commit()
+
 	def _msg(self, chan, msg):
 		helpers.msg(self.client, chan, msg)
 
@@ -244,6 +251,7 @@ class KitnHandler(DefaultCommandHandler):
 		m = self.URL_RE.search(msg)
 		if m:
 			logging.info("[url] %s -> %s: %s" % (nick, chan, m.group()))
+			self._url(m.group(), nick, chan)
 			self._url_announce(chan, m.group())
 
 	def _url_announce(self, chan, url):
@@ -627,6 +635,31 @@ class KitnHandler(DefaultCommandHandler):
 		"""whoami - Responds with the full nickstring for the user who runs it."""
 		self._msg(chan, nick)
 
+	def _cmd_URLFORGET(self, nick, chan, arg):
+		"""urlforget - Remove URLs from memory according to a pattern."""
+		usage = lambda: self._msg(chan, "Usage: urlforget <glob>")
+
+		if not arg:
+			return usage()
+
+		result = db.execute("DELETE FROM urls WHERE url GLOB ?", (arg,))
+		db.commit()
+		self._msg(chan, "%d urls matching '%s' forgotten." % (result.rowcount, arg))
+
+	def _cmd_URLSEARCH(self, nick, chan, arg):
+		"""urlsearch - Search for a previously seen URL that matches a glob."""
+		usage = lambda: self._msg(chan, "Usage: urlsearch <glob>")
+
+		if not arg:
+			return usage()
+
+		result = db.execute("SELECT url FROM urls WHERE url GLOB ? ORDER BY timestamp DESC LIMIT 1", (arg,)).fetchone()
+		db.rollback()
+		if result:
+			self._msg(chan, result[0])
+		else:
+			self._msg(chan, "No results found for '%s'." % arg)
+
 	def _cmd_XKCD(self, nick, chan, arg):
 		"""xkcd - Provides a link to the specified XKCD comic, or the most recent if not specified."""
 		try:
@@ -643,7 +676,6 @@ class KitnHandler(DefaultCommandHandler):
 			))
 		except urllib2.URLError:
 			self._msg(chan, "Unable to look up comic #%d." % comic)
-
 
 if __name__ == '__main__':
 
@@ -674,6 +706,13 @@ if __name__ == '__main__':
 	db.execute("""
 		CREATE TABLE IF NOT EXISTS seen (
 			nick TEXT PRIMARY KEY,
+			chan TEXT,
+			timestamp INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS urls (
+			url TEXT PRIMARY KEY,
+			nick TEXT,
 			chan TEXT,
 			timestamp INTEGER
 		)""")
