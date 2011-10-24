@@ -43,6 +43,9 @@ class KitnHandler(DefaultCommandHandler):
 	def __init__(self, *args, **kwargs):
 		super(KitnHandler, self).__init__(*args, **kwargs)
 
+		# To allow certain handlers to wait until after the handshake
+		self.WELCOMED = False
+
 		# Keep track of known bots
 		self.KNOWN_NICKS = set([self.client.nick])
 		self.KNOWN_BOTS = set([self.client.nick])
@@ -105,6 +108,7 @@ class KitnHandler(DefaultCommandHandler):
 		# Periodic tasks
 		self.periodic_callbacks = {
 			'reminders': self._process_reminders,
+			'new_xkcd': self._check_for_new_xkcd,
 		}
 		self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
 		self.periodic_thread.daemon = True
@@ -129,12 +133,37 @@ class KitnHandler(DefaultCommandHandler):
 
 	def _process_reminders(self, db):
 		"""Check to see if any reminders need to be triggered."""
+		# Wait until after handshakes
+		if not self.WELCOMED:
+			return
+
 		reminders = db.execute("SELECT id, nick, chan, content FROM reminders WHERE timestamp < ?", (time.time(),)).fetchall()
 		for r_id, nick, chan, content in reminders:
 			logging.info("Resolving reminder #%s" % r_id)
 			self._msg(chan, "%s: %s" % (nick, content))
 			db.execute("DELETE FROM reminders WHERE id = ?", (r_id,))
 		db.commit()
+
+	def _check_for_new_xkcd(self, db):
+		# Wait until after handshakes
+		if not self.WELCOMED:
+			return
+
+		if int(db_keyval('last_comic_check', default=0, conn=db)) + 60 < time.time():
+			db_keyval('last_comic_check', int(time.time()), conn=db)
+			comic_json_uri = "http://xkcd.com/info.0.json"
+			try:
+				data = urllib2.urlopen(comic_json_uri, timeout=3)
+				xkcd_json = json.load(data)
+				if int(db_keyval('last_comic_num', default=0, conn=db)) < xkcd_json['num']:
+					db_keyval('last_comic_num', xkcd_json['num'], conn=db)
+					s = config['servers'][self.client.host]
+					for chan in s.get('channels', ()):
+						self._msg(chan, "New xkcd #%d: %s <http://xkcd.com/%d/>" % (
+							xkcd_json['num'], xkcd_json['title'], xkcd_json['num'],
+						))
+			except urllib2.URLError:
+				logging.warning("Unable to load info for latest xkcd comic while checking for new.")
 
 	def whoisbot(self, nick, chan, user, msg):
 		"""Add a bot to the known bots list based on WHOIS."""
@@ -171,6 +200,7 @@ class KitnHandler(DefaultCommandHandler):
 			client.send('MODE', s['nick'], modes)
 
 		logging.info("Completed initial connection actions for %s." % self.client.host)
+		self.WELCOMED = True
 
 	def _is_nick_ignored(self, nick):
 		"""Check to see if we should be ignoring this nick."""
@@ -677,12 +707,32 @@ class KitnHandler(DefaultCommandHandler):
 		except urllib2.URLError:
 			self._msg(chan, "Unable to look up comic #%d." % comic)
 
+def db_keyval(key, val=None, default=None, conn=None):
+	"""Fetch a value from our 'misc' table key-val store."""
+	if conn is None:
+		conn = db
+	if val is not None:
+		conn.execute("INSERT OR REPLACE INTO misc (keyword, content) VALUES (?,?)", (key, val))
+		conn.commit()
+	else:
+		result = conn.execute("SELECT content FROM misc WHERE keyword = ?", (key,)).fetchone()
+		conn.rollback()
+		if result is None:
+			return default
+		else:
+			return result[0]
+
 if __name__ == '__main__':
 
 	with open('config.yaml') as f:
 		config = yaml.safe_load(f)
 
 	db = sqlite3.connect(config['database']['path'])
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS misc (
+			keyword TEXT PRIMARY KEY,
+			content TEXT
+		)""")
 	db.execute("""
 		CREATE TABLE IF NOT EXISTS pronouns (
 			nick TEXT PRIMARY KEY,
