@@ -37,6 +37,10 @@ def admin_only(f):
 			return self._msg(chan, "You are not allowed to run that command.")
 	return wrapper
 
+def is_action(f):
+	f.is_action = True
+	return f
+
 
 class KitnHandler(DefaultCommandHandler):
 
@@ -73,6 +77,9 @@ class KitnHandler(DefaultCommandHandler):
 			self.client.nick,
 			re.escape(config['sigil']),
 		))
+
+		# Actions - match "\x01ACTION <something>s <nick>\x01"
+		self.ACTION_RE = re.compile("\x01ACTION (\\w+)s %s\x01" % self.client.nick)
 
 		# URLs
 		self.URL_RE = re.compile(r"""
@@ -277,12 +284,26 @@ class KitnHandler(DefaultCommandHandler):
 			else:
 				logging.warning('Unknown command "%s".' % cmd)
 
+		# See if this is an action we recognize
+		m = self.ACTION_RE.match(msg)
+		if m:
+			act = m.group(1)
+			cmd_func = '_cmd_%s' % act.upper()
+			if hasattr(self, cmd_func):
+				func = getattr(self, cmd_func)
+				if hasattr(func, 'is_action') and func.is_action:
+					logging.info("[action] %s -> %s: %s" % (nick, chan, act))
+					func(nick, chan, None)
+					return
+			logging.warning('Unknown action "%s".' % act)
+
 		# See if there's a URL we should recognize
 		m = self.URL_RE.search(msg)
 		if m:
 			logging.info("[url] %s -> %s: %s" % (nick, chan, m.group()))
 			self._url(m.group(), nick, chan)
 			self._url_announce(chan, m.group())
+			return
 
 	def _url_announce(self, chan, url):
 		"""Announce the info for a detected URL in the channel it was detected in."""
@@ -417,6 +438,7 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			return self._msg(chan, "%s: unable to cancel reminder #%s (non-existant? not yours?)." % (nick, r_id))
 
+	@is_action
 	def _cmd_CATNIP(self, nick, chan, arg):
 		"""catnip - Give the kitn catnip."""
 		self._emote(chan, "perks up and paws at %s excitedly" % nick.split('!')[0])
@@ -431,6 +453,7 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			self._msg(chan, "%s: %s" % (nick.split('!')[0], random.choice(items)))
 
+	@is_action
 	def _cmd_CUDDLE(self, nick, chan, arg):
 		"""cuddle - Ask the bot for a cuddle."""
 		self._emote(chan, "cuddles %s" % nick.split('!')[0])
@@ -449,6 +472,7 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			self._msg(chan, "No factoid '%s' found." % (arg,))
 
+	@is_action
 	def _cmd_HUG(self, nick, chan, arg):
 		"""hug - Ask the bot for a hug."""
 		self._emote(chan, "hugs %s" % nick.split('!')[0])
@@ -554,6 +578,7 @@ class KitnHandler(DefaultCommandHandler):
 		self._msg(chan, "Leaving channel %s." % arg)
 		helpers.part(self.client, arg)
 
+	@is_action
 	def _cmd_PET(self, nick, chan, arg):
 		"""pet - Pet the kitn."""
 		self._emote(chan, "purrs")
@@ -652,6 +677,7 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			self._msg(chan, "I haven't seen anyone matching '%s'." % arg)
 
+	@is_action
 	def _cmd_SNUGGLE(self, nick, chan, arg):
 		"""snuggle - Ask the bot for a snuggle."""
 		self._emote(chan, "snuggles %s" % nick.split('!')[0])
