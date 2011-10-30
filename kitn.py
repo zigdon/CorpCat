@@ -585,6 +585,16 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
 
+	def _cmd_MLP(self, nick, chan, arg):
+		"""mlp - Link to the provided name on the MLP wiki."""
+		usage = lambda: self._msg(chan, "Usage: mlp <page name>")
+
+		if not arg:
+			return usage()
+
+		page = '_'.join((arg[0].upper() + arg[1:]).split())
+		self._msg(chan, "http://mlp.wikia.com/wiki/%s" % page)
+
 	@admin_only
 	def _cmd_PART(self, nick, chan, arg):
 		"""part - Make the bot leave the specified channel, or if not specified, the channel the message was in."""
@@ -666,6 +676,30 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
 
+	def _cmd_SEARCH(self, nick, chan, arg):
+		"""search - Does a web search for the supplied query and returns the first result."""
+		usage = lambda: self._msg(chan, "Usage: search <query>")
+
+		if not arg:
+			return usage()
+
+		query = urlencode({
+			'AppId': config['bing']['appid'],
+			'Version': '2.2',
+			'Market': 'en-US',
+			'Query': arg,
+			'Sources': 'web',
+			'Web.Count': 1,
+			'JsonType': 'raw',
+		})
+
+		try:
+			result = json.load(urllib2.urlopen('http://api.bing.net/json.aspx?%s' % query))
+			self._msg(chan, "%(Title)s <%(Url)s>" % (result['SearchResponse']['Web']['Results'][0]))
+		except:
+			logging.warning("Error while attempting to retrieve results from Bing API:", exc_info=True)
+			self._msg(chan, "An error was encountered while trying to complete the search request.")
+
 	def _cmd_SEEN(self, nick, chan, arg):
 		"""seen - Get the time that a nick was last seen active."""
 		usage = lambda: self._msg(chan, "Usage: seen <nick or glob>")
@@ -697,30 +731,6 @@ class KitnHandler(DefaultCommandHandler):
 			self._msg(chan, "%s was last seen %s ago." % (result[0], timeago))
 		else:
 			self._msg(chan, "I haven't seen anyone matching '%s'." % arg)
-
-	def _cmd_SEARCH(self, nick, chan, arg):
-		"""search - Does a web search for the supplied query and returns the first result."""
-		usage = lambda: self._msg(chan, "Usage: search <query>")
-
-		if not arg:
-			return usage()
-
-		query = urlencode({
-			'AppId': config['bing']['appid'],
-			'Version': '2.2',
-			'Market': 'en-US',
-			'Query': arg,
-			'Sources': 'web',
-			'Web.Count': 1,
-			'JsonType': 'raw',
-		})
-
-		try:
-			result = json.load(urllib2.urlopen('http://api.bing.net/json.aspx?%s' % query))
-			self._msg(chan, "%(Title)s <%(Url)s>" % (result['SearchResponse']['Web']['Results'][0]))
-		except:
-			logging.warning("Error while attempting to retrieve results from Bing API:", exc_info=True)
-			self._msg(chan, "An error was encountered while trying to complete the search request.")
 
 	@is_action
 	def _cmd_SNUGGLE(self, nick, chan, arg):
