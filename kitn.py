@@ -687,6 +687,10 @@ class KitnHandler(DefaultCommandHandler):
 		if arg:
 			self.client.send(arg)
 
+	def _cmd_UTC(self, nick, chan, arg):
+		"""utc - Responds with the current time, UTC."""
+		self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
+
 	def _cmd_WHOAMI(self, nick, chan, arg):
 		"""whoami - Responds with the full nickstring for the user who runs it."""
 		self._msg(chan, nick)
