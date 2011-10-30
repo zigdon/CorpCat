@@ -43,6 +43,16 @@ def is_action(f):
 	f.is_action = True
 	return f
 
+def timeago(secs):
+	"""Returns a 'nice' representation of a time interval."""
+	if secs < 60:
+		return "%ds" % secs
+	elif secs < 3600:
+		return "%dm" % (secs // 60)
+	elif secs < 86400:
+		return "%dh" % (secs // 3600)
+	else:
+		return "%dd" % (secs // 86400)
 
 class KitnHandler(DefaultCommandHandler):
 
@@ -76,6 +86,7 @@ class KitnHandler(DefaultCommandHandler):
 
 		# Replay buffers
 		self.replay_buffers = defaultdict(lambda: deque(maxlen=config['limits']['replay']))
+		self.last_replay = defaultdict(dict)
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
@@ -195,14 +206,16 @@ class KitnHandler(DefaultCommandHandler):
 		# Check to see if they have replay enabled
 		replay_lines = db.execute("SELECT lines FROM replay WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
 		if replay_lines:
-			# Send the replay for that channel
 			lines = replay_lines[0]
-			recent = list(self.replay_buffers[chan])[-1*lines:]
-			if recent:
-				msg = '\n'.join(x[1] for x in recent)
-				self._msg(nick, msg)
-				secs_since = int(time.time() - recent[-1][0])
-				self._msg(nick, 'Replay for %s complete, most recent line was from %s seconds ago.' % (chan, secs_since))
+
+			# Only send replay for this channel once a minute per user
+			if self.last_replay[chan].get(nick, 0) + 60 < time.time():
+				recent = list(self.replay_buffers[chan])[-1*lines:]
+				if recent:
+					self.last_replay[chan][nick] = time.time()
+					msg = '\n'.join("%s ago - [%s] <%s> %s" % (timeago(int(time.time() - x[0])), chan, x[1], x[2]) for x in recent)
+					self._msg(nick, msg)
+					self._msg(nick, 'Replay for %s complete.' % chan)
 
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
@@ -246,7 +259,7 @@ class KitnHandler(DefaultCommandHandler):
 		"""Update the replay buffer for a channel."""
 		if not chan.startswith('#'):
 			return
-		self.replay_buffers[chan].append((time.time(), '<%s> %s' % (nick.split('!')[0], msg)))
+		self.replay_buffers[chan].append((time.time(), nick.split('!')[0], msg))
 
 	def privmsg(self, nick, chan, msg):
 		self._seen(nick, chan)
