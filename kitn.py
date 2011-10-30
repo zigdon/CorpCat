@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from collections import defaultdict, deque
 import datetime
 import functools
 import json
@@ -72,6 +73,9 @@ class KitnHandler(DefaultCommandHandler):
 		for offset in range(13):
 			self.TIMEZONES['GMT+%d' % offset] = pytz.timezone('Etc/GMT+%d' % offset)
 			self.TIMEZONES['GMT-%d' % offset] = pytz.timezone('Etc/GMT-%d' % offset)
+
+		# Replay buffers
+		self.replay_buffers = defaultdict(lambda: deque(maxlen=config['limits']['replay']))
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
@@ -184,6 +188,22 @@ class KitnHandler(DefaultCommandHandler):
 			logging.info("Adding '%s' to the known bots list." % user)
 			self.KNOWN_BOTS.add(user)
 
+	def join(self, nick, chan):
+		"""When a user joins a channel..."""
+
+		nick = nick.split('!')[0]
+		# Check to see if they have replay enabled
+		replay_lines = db.execute("SELECT lines FROM replay WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
+		if replay_lines:
+			# Send the replay for that channel
+			lines = replay_lines[0]
+			recent = list(self.replay_buffers[chan])[-1*lines:]
+			if recent:
+				msg = '\n'.join(x[1] for x in recent)
+				self._msg(nick, msg)
+				secs_since = int(time.time() - recent[-1][0])
+				self._msg(nick, 'Replay for %s complete, most recent line was from %s seconds ago.' % (chan, secs_since))
+
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
 		s = config['servers'][self.client.host]
@@ -222,12 +242,19 @@ class KitnHandler(DefaultCommandHandler):
 
 		return False
 
+	def _record_for_replay(self, nick, chan, msg):
+		"""Update the replay buffer for a channel."""
+		if not chan.startswith('#'):
+			return
+		self.replay_buffers[chan].append((time.time(), '<%s> %s' % (nick.split('!')[0], msg)))
+
 	def privmsg(self, nick, chan, msg):
 		self._seen(nick, chan)
 		if self._is_nick_ignored(nick):
 			logging.debug("[ignored message] %s -> %s" % (nick, chan))
 		else:
 			logging.debug("[message] %s -> %s: %s" % (nick, chan, msg))
+			self._record_for_replay(nick, chan, msg)
 			self._parse_line(nick, chan, msg)
 
 	def notice(self, nick, chan, msg):
@@ -236,6 +263,7 @@ class KitnHandler(DefaultCommandHandler):
 			logging.debug("[ignored notice] %s -> %s" % (nick, chan))
 		else:
 			logging.debug("[notice] %s -> %s: %s" % (nick, chan, msg))
+			self._record_for_replay(nick, chan, msg)
 			self._parse_line(nick, chan, msg)
 
 	def _seen(self, nick, chan):
@@ -676,6 +704,31 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
 
+	def _cmd_REPLAY(self, nick, chan, arg):
+		"""replay - Request replay-on-join for the current channel and user, or turn it off."""
+		usage = lambda: self._msg(chan, "Usage: replay <number> (0 for off).")
+
+		try:
+			lines = int(arg)
+		except:
+			return usage()
+
+		lines = max(0, min(lines, config['limits']['replay']))
+
+		nick = nick.split('!')[0]
+		if not lines:
+			db.execute("DELETE FROM replay WHERE nick = ? AND chan = ?", (nick, chan))
+			db.commit()
+			return self._msg(chan, '%s: You will no longer receive message replay on join for this channel.' % nick)
+		else:
+			existing = db.execute("SELECT id FROM replay WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
+			if existing:
+				db.execute("UPDATE replay SET lines = ? WHERE id = ?", (lines, existing[0]))
+			else:
+				db.execute("INSERT INTO replay (nick, chan, lines) VALUES (?,?,?)", (nick, chan, lines))
+			db.commit()
+			return self._msg(chan, '%s: You will now receive up to %d lines of replay when joining this channel.' % (nick, lines))
+
 	def _cmd_SEARCH(self, nick, chan, arg):
 		"""search - Does a web search for the supplied query and returns the first result."""
 		usage = lambda: self._msg(chan, "Usage: search <query>")
@@ -850,6 +903,13 @@ if __name__ == '__main__':
 			nick TEXT,
 			chan TEXT,
 			timestamp INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS replay (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			nick TEXT,
+			chan TEXT,
+			lines INTEGER
 		)""")
 	db.commit()
 

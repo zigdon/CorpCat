@@ -13,6 +13,9 @@ servers:
 
 sigil: '.'
 
+limits:
+  replay: 20
+
 database:
   path: 'kitn.sqlite3'
 
