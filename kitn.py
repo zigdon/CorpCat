@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 from collections import defaultdict, deque
 import datetime
 import functools
@@ -86,7 +87,7 @@ class KitnHandler(DefaultCommandHandler):
 
 		# Replay buffers
 		self.replay_buffers = defaultdict(lambda: deque(maxlen=config['limits']['replay']))
-		self.last_replay = defaultdict(dict)
+		self.last_join = defaultdict(dict)
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
@@ -203,19 +204,27 @@ class KitnHandler(DefaultCommandHandler):
 		"""When a user joins a channel..."""
 
 		nick = nick.split('!')[0]
+		if self.last_join[chan].get(nick, 0) + 60 > time.time():
+			# On-join actions only trigger once a minute per channel
+			return
+		self.last_join[chan][nick] = time.time()
+
+		# See if they have a catchphrase for this channel
+		catchphrase = db.execute("SELECT phrase FROM catchphrases WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
+		db.rollback()
+		if catchphrase:
+			self._msg(chan, "« %s » - %s".decode('utf-8') % (catchphrase[0], nick))
+
 		# Check to see if they have replay enabled
 		replay_lines = db.execute("SELECT lines FROM replay WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
 		if replay_lines:
 			lines = replay_lines[0]
 
-			# Only send replay for this channel once a minute per user
-			if self.last_replay[chan].get(nick, 0) + 60 < time.time():
-				recent = list(self.replay_buffers[chan])[-1*lines:]
-				if recent:
-					self.last_replay[chan][nick] = time.time()
-					msg = '\n'.join("%s ago - [%s] <%s> %s" % (timeago(int(time.time() - x[0])), chan, x[1], x[2]) for x in recent)
-					self._msg(nick, msg)
-					self._msg(nick, 'Replay for %s complete.' % chan)
+			recent = list(self.replay_buffers[chan])[-1*lines:]
+			if recent:
+				msg = '\n'.join("%s ago - [%s] <%s> %s" % (timeago(int(time.time() - x[0])), chan, x[1], x[2]) for x in recent)
+				self._msg(nick, msg)
+				self._msg(nick, 'Replay for %s complete.' % chan)
 
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
@@ -479,6 +488,34 @@ class KitnHandler(DefaultCommandHandler):
 			return self._msg(chan, "%s: cancelled reminder #%s." % (nick, r_id))
 		else:
 			return self._msg(chan, "%s: unable to cancel reminder #%s (non-existant? not yours?)." % (nick, r_id))
+
+	def _cmd_CATCHPHRASE(self, nick, chan, arg):
+		"""catchphrase - Sets or removes an on-join catchphrase for this nick+channel."""
+
+		if not chan.startswith('#'):
+			return
+
+		nick = nick.split('!')[0]
+
+		if not arg:
+			catchphrase = db.execute("SELECT phrase FROM catchphrases WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
+			db.rollback()
+			if catchphrase:
+				self._msg(chan, "« %s » - %s".decode('utf-8') % (catchphrase[0], nick))
+			else:
+				self._msg(chan, "%s does not have a catchphrase set." % nick)
+		elif arg == 'delete':
+			db.execute("DELETE FROM catchphrases WHERE nick = ? and chan = ?", (nick, chan))
+			db.commit()
+			self._msg(chan, "%s: catchphrase for %s cleared." % (nick, chan))
+		else:
+			existing = db.execute("SELECT id FROM catchphrases WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
+			if existing:
+				db.execute("UPDATE catchphrases SET phrase = ? WHERE id = ?", (existing[0], arg))
+			else:
+				db.execute("INSERT INTO catchphrases (nick, chan, phrase) VALUES (?,?,?)", (nick, chan, arg))
+			db.commit()
+			self._msg(chan, "%s: catchphrase set to « %s »" % (nick, arg))
 
 	@is_action
 	def _cmd_CATNIP(self, nick, chan, arg):
@@ -923,6 +960,13 @@ if __name__ == '__main__':
 			nick TEXT,
 			chan TEXT,
 			lines INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS catchphrases (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			nick TEXT,
+			chan TEXT,
+			phrase TEXT
 		)""")
 	db.commit()
 
