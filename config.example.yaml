@@ -21,3 +21,6 @@ urlannounce:
 
 bing:
   appid: '123B123C1231239F123A123123ECC123123'
+
+google:
+  apikey: 'AD2923NF3123_E123asdLL9845M45MKK'

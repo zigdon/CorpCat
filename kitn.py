@@ -473,6 +473,26 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			self._msg(chan, "No factoid '%s' found." % (arg,))
 
+	def _cmd_GOOGLE(self, nick, chan, arg):
+		"""google - Does a google search for the supplied query and returns the first result."""
+		usage = lambda: self._msg(chan, "Usage: google <query>")
+
+		if not arg:
+			return usage()
+
+		query = urlencode({
+			'v': '1.0',
+			'key': config['google']['apikey'],
+			'q': arg,
+		})
+
+		try:
+			result = json.load(urllib2.urlopen('https://ajax.googleapis.com/ajax/services/search/web?%s' % query))
+			self._msg(chan, "%(titleNoFormatting)s <%(unescapedUrl)s>" % (result['responseData']['results'][0]))
+		except:
+			logging.warning("Error while attempting to retrieve results from Google API:", exc_info=True)
+			self._msg(chan, "An error was encountered while trying to complete the search request.")
+
 	@is_action
 	def _cmd_HUG(self, nick, chan, arg):
 		"""hug - Ask the bot for a hug."""
