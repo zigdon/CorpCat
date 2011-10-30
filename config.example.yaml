@@ -18,3 +18,6 @@ database:
 
 urlannounce:
   - '#kitntest'
+
+bing:
+  appid: '123B123C1231239F123A123123ECC123123'
