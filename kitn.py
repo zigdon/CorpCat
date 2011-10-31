@@ -511,7 +511,7 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			existing = db.execute("SELECT id FROM catchphrases WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
 			if existing:
-				db.execute("UPDATE catchphrases SET phrase = ? WHERE id = ?", (existing[0], arg))
+				db.execute("UPDATE catchphrases SET phrase = ? WHERE id = ?", (arg, existing[0]))
 			else:
 				db.execute("INSERT INTO catchphrases (nick, chan, phrase) VALUES (?,?,?)", (nick, chan, arg))
 			db.commit()
