@@ -446,6 +446,10 @@ class KitnHandler(DefaultCommandHandler):
 		if hour > 23 or minute > 59:
 			return self._msg(chan, "%d:%d is not a valid time." % (hour, minute))
 
+		# So that things like 'pst' or 'mdt' can be used
+		if len(tz_string) <= 3:
+			tz_string = tz_string.upper()
+
 		if tz_string in self.TIMEZONES:
 			timezone = self.TIMEZONES[tz_string]
 		else:
