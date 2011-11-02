@@ -214,7 +214,8 @@ class KitnHandler(DefaultCommandHandler):
 
 	def nick(self, nick, newnick):
 		"""Process server's notification of a nick change."""
-		nick = nick.split('!')[0]
+		nick = nick.split('!')[0].lower()
+		newnick = newnick.lower()
 		logging.info("[renick] %s -> %s" % (nick, newnick))
 		for userlist in self.channel_userlists.itervalues():
 			if nick in userlist:
@@ -223,13 +224,13 @@ class KitnHandler(DefaultCommandHandler):
 
 	def part(self, nick, chan, msg=None):
 		"""Process server's notification of a user leaving a channel."""
-		nick = nick.split('!')[0]
+		nick = nick.split('!')[0].lower()
 		logging.info("[part] %s -> %s" % (nick, chan))
 		self.channel_userlists[chan].discard(nick)
 
 	def quit(self, nick, msg=None):
 		"""Process server's notification of a user leaving the server."""
-		nick = nick.split('!')[0]
+		nick = nick.split('!')[0].lower()
 		logging.info("[quit] %s (%s)" % (nick, msg))
 		for userlist in self.channel_userlists.itervalues():
 			userlist.discard(nick)
@@ -238,7 +239,7 @@ class KitnHandler(DefaultCommandHandler):
 		"""When a user joins a channel..."""
 		nick = nick.split('!')[0]
 		logging.info("[join] %s -> %s" % (nick, chan))
-		self.channel_userlists[chan].add(nick)
+		self.channel_userlists[chan].add(nick.lower())
 
 		if self.last_join[chan].get(nick, 0) + 60 > time.time():
 			# On-join actions only trigger once a minute per channel
@@ -263,7 +264,7 @@ class KitnHandler(DefaultCommandHandler):
 				self._msg(nick, "Replay for %s complete." % chan)
 
 		# Check to see if they have any voicemail
-		voicemail = db.execute("SELECT COUNT(*) FROM voicemail WHERE tonick = ?", (nick,)).fetchone()[0]
+		voicemail = db.execute("SELECT COUNT(*) FROM voicemail WHERE tonick = ?", (nick.lower(),)).fetchone()[0]
 		db.rollback()
 		if voicemail > 0:
 			self._msg(nick, "You have %d pending voicemails. Use '%svoicemail get <number>' to retrieve them." % (voicemail, config['sigil']))
@@ -408,7 +409,8 @@ class KitnHandler(DefaultCommandHandler):
 	def _highlight(self, nick, chan, msg, target):
 		"""Check to see if we need to store a voicemail for a highlight message."""
 		nick = nick.split('!')[0]
-		if nick in self.channel_userlists[chan]:
+		target = target.lower()
+		if target in self.channel_userlists[chan]:
 			# Don't need voicemail for present users
 			return
 
@@ -925,7 +927,7 @@ class KitnHandler(DefaultCommandHandler):
 		"""voicemail - Access messages that were left while a user was offline."""
 		usage = lambda: self._msg(chan, "Usage: voicemail [get <number> | clear]")
 
-		nick = nick.split('!')[0]
+		nick = nick.split('!')[0].lower()
 
 		if chan.startswith('#'):
 			return self._msg(chan, "%s: that command must be used in PM." % nick)
