@@ -89,6 +89,9 @@ class KitnHandler(DefaultCommandHandler):
 		self.replay_buffers = defaultdict(lambda: deque(maxlen=config['limits']['replay']))
 		self.last_join = defaultdict(dict)
 
+		# Users present in channels
+		self.channel_userlists = defaultdict(set)
+
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
 			self.client.nick,
@@ -97,6 +100,9 @@ class KitnHandler(DefaultCommandHandler):
 
 		# Actions - match "\x01ACTION <something>s <nick>\x01"
 		self.ACTION_RE = re.compile("\x01ACTION (\\w+)s %s\x01" % self.client.nick)
+
+		# Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
+		self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.*)$")
 
 		# URLs
 		self.URL_RE = re.compile(r"""
@@ -200,10 +206,40 @@ class KitnHandler(DefaultCommandHandler):
 			logging.info("Adding '%s' to the known bots list." % user)
 			self.KNOWN_BOTS.add(user)
 
+	def namreply(self, nick, chan, equals, channel, nicklist):
+		"""Process server's notification of channel occupants."""
+		nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split())
+		logging.info("[namreply] %s -> %r" % (channel, nicks))
+		self.channel_userlists[channel] = nicks
+
+	def nick(self, nick, newnick):
+		"""Process server's notification of a nick change."""
+		nick = nick.split('!')[0]
+		logging.info("[renick] %s -> %s" % (nick, newnick))
+		for userlist in self.channel_userlists.itervalues():
+			if nick in userlist:
+				userlist.discard(nick)
+				userlist.add(newnick)
+
+	def part(self, nick, chan, msg=None):
+		"""Process server's notification of a user leaving a channel."""
+		nick = nick.split('!')[0]
+		logging.info("[part] %s -> %s" % (nick, chan))
+		self.channel_userlists[chan].discard(nick)
+
+	def quit(self, nick, msg=None):
+		"""Process server's notification of a user leaving the server."""
+		nick = nick.split('!')[0]
+		logging.info("[quit] %s (%s)" % (nick, msg))
+		for userlist in self.channel_userlists.itervalues():
+			userlist.discard(nick)
+
 	def join(self, nick, chan):
 		"""When a user joins a channel..."""
-
 		nick = nick.split('!')[0]
+		logging.info("[join] %s -> %s" % (nick, chan))
+		self.channel_userlists[chan].add(nick)
+
 		if self.last_join[chan].get(nick, 0) + 60 > time.time():
 			# On-join actions only trigger once a minute per channel
 			return
@@ -224,7 +260,13 @@ class KitnHandler(DefaultCommandHandler):
 			if recent:
 				msg = '\n'.join("%s ago - [%s] <%s> %s" % (timeago(int(time.time() - x[0])), chan, x[1], x[2]) for x in recent)
 				self._msg(nick, msg)
-				self._msg(nick, 'Replay for %s complete.' % chan)
+				self._msg(nick, "Replay for %s complete." % chan)
+
+		# Check to see if they have any voicemail
+		voicemail = db.execute("SELECT COUNT(*) FROM voicemail WHERE tonick = ?", (nick,)).fetchone()[0]
+		db.rollback()
+		if voicemail > 0:
+			self._msg(nick, "You have %d pending voicemails. Use '%svoicemail get <number>' to retrieve them." % (voicemail, config['sigil']))
 
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
@@ -348,6 +390,13 @@ class KitnHandler(DefaultCommandHandler):
 					return
 			logging.warning('Unknown action "%s".' % act)
 
+		# See if this is a highlight for someone not currently in-channel
+		# (only for actual channels, not PMs)
+		m = self.HIGHLIGHT_RE.match(msg)
+		if chan.startswith('#') and m:
+			self._highlight(nick, chan, msg, m.group(1))
+			# Note that we don't return here - we still announce URLs if present
+
 		# See if there's a URL we should recognize
 		m = self.URL_RE.search(msg)
 		if m:
@@ -355,6 +404,25 @@ class KitnHandler(DefaultCommandHandler):
 			self._url(m.group(), nick, chan)
 			self._url_announce(chan, m.group())
 			return
+
+	def _highlight(self, nick, chan, msg, target):
+		"""Check to see if we need to store a voicemail for a highlight message."""
+		nick = nick.split('!')[0]
+		if nick in self.channel_userlists[chan]:
+			# Don't need voicemail for present users
+			return
+
+		seen = db.execute("SELECT nick FROM seen WHERE nick = ?", (target.lower(),)).fetchone()
+		db.rollback()
+		if not seen:
+			# Don't need voicemail for a nick we've never seen say anything
+			return
+
+		# We've seen the nick before and they're not online, so store a voicemail.
+		result = db.execute("INSERT INTO voicemail (fromnick, tonick, chan, contents, timestamp) VALUES (?,?,?,?,?)",
+			(nick, target, chan, msg, time.time()))
+		db.commit()
+		self._msg(chan, "Added voicemail #%d for absent user %s." % (result.lastrowid, target))
 
 	def _url_announce(self, chan, url):
 		"""Announce the info for a detected URL in the channel it was detected in."""
@@ -853,6 +921,56 @@ class KitnHandler(DefaultCommandHandler):
 		"""utc - Responds with the current time, UTC."""
 		self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
 
+	def _cmd_VOICEMAIL(self, nick, chan, arg):
+		"""voicemail - Access messages that were left while a user was offline."""
+		usage = lambda: self._msg(chan, "Usage: voicemail [get <number> | clear]")
+
+		nick = nick.split('!')[0]
+
+		if chan.startswith('#'):
+			return self._msg(chan, "%s: that command must be used in PM." % nick)
+
+		if not arg:
+			return usage()
+		args = arg.split()
+
+		if args[0] == 'clear':
+			if len(args) > 1:
+				return usage()
+			db.execute("DELETE FROM voicemail WHERE tonick = ?", (nick,))
+			db.commit()
+			return self._msg(chan, "All pending voicemail for your nick has been cleared.")
+		elif args[0] == 'get':
+			if len(args) != 2:
+				return usage()
+
+			try:
+				lines = int(args[1])
+			except (TypeError, ValueError):
+				return usage()
+
+			if lines < 1:
+				return usage()
+
+			lines = min(lines, 10)
+
+			results = db.execute("""SELECT id, fromnick, chan, contents, timestamp
+						FROM voicemail
+						WHERE tonick = ?
+						ORDER BY timestamp
+						LIMIT ?""", (nick, lines)).fetchall()
+			db.rollback()
+			if not results:
+				return self._msg(chan, "You have no pending voicemail.")
+			else:
+				for id, fromnick, channel, contents, timestamp in results:
+					self._msg(chan, "%s ago - [%s] <%s> %s" % (
+						timeago(int(time.time()) - timestamp), channel, fromnick, contents))
+					db.execute("DELETE FROM voicemail WHERE id = ?", (id,))
+				db.commit()
+		else:
+			return usage()
+
 	def _cmd_WHOAMI(self, nick, chan, arg):
 		"""whoami - Responds with the full nickstring for the user who runs it."""
 		self._msg(chan, nick)
@@ -971,6 +1089,15 @@ if __name__ == '__main__':
 			nick TEXT,
 			chan TEXT,
 			phrase TEXT
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS voicemail (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			fromnick TEXT,
+			tonick TEXT,
+			chan TEXT,
+			contents TEXT,
+			timestamp INTEGER
 		)""")
 	db.commit()
 
