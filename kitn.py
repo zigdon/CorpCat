@@ -340,10 +340,16 @@ class KitnHandler(DefaultCommandHandler):
 
 	def _url(self, url, nick, chan):
 		"""Record when this URL was seen."""
-		db.execute("INSERT OR IGNORE INTO urls (url, nick, chan, timestamp) VALUES (?,?,?,?)", (
-			url, nick.split('!')[0], chan, time.time(),
-		))
-		db.commit()
+		prev = db.execute("SELECT nick, chan, timestamp FROM urls WHERE url = ?", (url,)).fetchone()
+		db.rollback()
+		if prev:
+			return {'nick': prev[0], 'chan': prev[1], 'timestamp': prev[2]}
+		else:
+			db.execute("INSERT OR IGNORE INTO urls (url, nick, chan, timestamp) VALUES (?,?,?,?)", (
+				url, nick.split('!')[0], chan, time.time(),
+			))
+			db.commit()
+			return None
 
 	def _msg(self, chan, msg):
 		helpers.msg(self.client, chan, msg)
@@ -402,8 +408,8 @@ class KitnHandler(DefaultCommandHandler):
 		m = self.URL_RE.search(msg)
 		if m:
 			logging.info("[url] %s -> %s: %s" % (nick, chan, m.group()))
-			self._url(m.group(), nick, chan)
-			self._url_announce(chan, m.group())
+			prev = self._url(m.group(), nick, chan)
+			self._url_announce(chan, m.group(), prev)
 			return
 
 	def _highlight(self, nick, chan, msg, target):
@@ -426,7 +432,7 @@ class KitnHandler(DefaultCommandHandler):
 		db.commit()
 		self._msg(chan, "Added voicemail #%d for absent user %s." % (result.lastrowid, target))
 
-	def _url_announce(self, chan, url):
+	def _url_announce(self, chan, url, prev):
 		"""Announce the info for a detected URL in the channel it was detected in."""
 
 		if chan not in config['urlannounce']:
@@ -474,6 +480,9 @@ class KitnHandler(DefaultCommandHandler):
 			# Only announce the url if something caught our attention
 			if report_components:
 				self._msg(chan, "Link points to %s" % ' - '.join(report_components))
+			if prev:
+				self._msg(chan, "(First linked by %s in %s, %s ago.)" % (prev['nick'], prev['chan'],
+					timeago(int(time.time()-prev['timestamp']))))
 
 		except urllib2.URLError:
 			logging.info("URLError while retrieving %s" % url, exc_info=True)
