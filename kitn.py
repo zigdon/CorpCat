@@ -680,7 +680,7 @@ class KitnHandler(DefaultCommandHandler):
 			'w': 604800, 'wk': 604800, 'wks': 604800, 'week': 604800, 'weeks': 604800,
 		}
 
-		m = re.match(r"(\d+)(\D+)$", args[0])
+		m = re.match(r"(\d+(?:\.\d+)?)(\D+)$", args[0])
 		if m:
 			args[0:1] = [m.group(1), m.group(2)]
 
@@ -689,7 +689,7 @@ class KitnHandler(DefaultCommandHandler):
 			return usage()
 
 		try:
-			time_amount = int(args[0])
+			time_amount = float(args[0])
 		except (ValueError, TypeError):
 			return usage()
 
@@ -702,7 +702,7 @@ class KitnHandler(DefaultCommandHandler):
 			))
 
 		nick = nick.split('!')[0]
-		timestamp = time.time() + (time_amount * time_units[args[1]])
+		timestamp = int(time.time() + (time_amount * time_units[args[1]]))
 		content = ' '.join(args[2:])
 		result = db.execute("INSERT INTO reminders (nick, chan, timestamp, content) VALUES (?,?,?,?)",
 			(nick, chan, timestamp, content))
