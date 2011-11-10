@@ -10,7 +10,7 @@ import re
 import sqlite3
 import threading
 import time
-from urllib import urlencode
+from urllib import urlencode, quote_plus
 import urllib2
 from urlparse import urlparse
 
@@ -620,6 +620,32 @@ class KitnHandler(DefaultCommandHandler):
 		"""cuddle - Ask the bot for a cuddle."""
 		self._emote(chan, "cuddles %s" % nick.split('!')[0])
 
+	def _cmd_DEFINE(self, nick, chan, arg):
+		"""wp - Search wiktionary and return a snippet about the top result."""
+		usage = lambda: self._msg(chan, "Usage: define <query>")
+
+		if not arg:
+			return usage()
+
+		wp_query_url = "http://en.wiktionary.org/w/api.php?%s" % urlencode({
+				"action": "query",
+				"list": "search",
+				"srsearch": arg,
+				"format": "json",
+			})
+		try:
+			data = urllib2.urlopen(wp_query_url, timeout=5)
+			results = json.load(data)['query']['search']
+			if results:
+				title = results[0]['title']
+				url = "http://en.wiktionary.org/wiki/%s" % quote_plus(title.replace(' ', '_'))
+				snippet = ''.join(e.string for e in soup(results[0]['snippet'], convertEntities=soup.HTML_ENTITIES) if e)
+				self._msg(chan, "%s <%s>" % (snippet, url))
+			else:
+				self._msg(chan, "No results found for '%s'." % arg)
+		except urllib2.URLError:
+			self._msg(chan, "Unable to perform Wiktionary search.")
+
 	def _cmd_FORGET(self, nick, chan, arg):
 		"""forget - Remove a factoid from the bot's knowledge."""
 		usage = lambda: self._msg("Usage: forget <keyword>")
@@ -745,6 +771,15 @@ class KitnHandler(DefaultCommandHandler):
 				"(Use the 'relearn' command to overwrite it, or the 'forget' command to remove it.)" % args[0])
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
+
+	def _cmd_MEME(self, nick, chan, arg):
+		"""meme - search for a meme on KnowYourMeme"""
+		usage = lambda: self._msg(chan, "Usage: meme <query>")
+
+		if not arg:
+			return usage()
+
+		self._msg(chan, "http://knowyourmeme.com/search?%s" % urlencode({'q': arg}))
 
 	def _cmd_MLP(self, nick, chan, arg):
 		"""mlp - Link to the provided name on the MLP wiki."""
@@ -928,6 +963,15 @@ class KitnHandler(DefaultCommandHandler):
 		if arg:
 			self.client.send(arg)
 
+	def _cmd_TROPE(self, nick, chan, arg):
+		"""trope - provides a link to the corresponding TVTropes page."""
+		usage = lambda: self._msg(chan, "Usage: trope <keyword>")
+
+		if not arg:
+			return usage()
+
+		self._msg(chan, "http://tvtropes.org/pmwiki/pmwiki.php/Main/%s" % arg)
+
 	def _cmd_UTC(self, nick, chan, arg):
 		"""utc - Responds with the current time, UTC."""
 		self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
@@ -1010,6 +1054,32 @@ class KitnHandler(DefaultCommandHandler):
 			self._msg(chan, result[0])
 		else:
 			self._msg(chan, "No results found for '%s'." % arg)
+
+	def _cmd_WP(self, nick, chan, arg):
+		"""wp - Search wikipedia and return a snippet about the top result."""
+		usage = lambda: self._msg(chan, "Usage: wp <query>")
+
+		if not arg:
+			return usage()
+
+		wp_query_url = "http://en.wikipedia.org/w/api.php?%s" % urlencode({
+				"action": "query",
+				"list": "search",
+				"srsearch": arg,
+				"format": "json",
+			})
+		try:
+			data = urllib2.urlopen(wp_query_url, timeout=5)
+			results = json.load(data)['query']['search']
+			if results:
+				title = results[0]['title']
+				url = "http://www.wikipedia.org/wiki/%s" % quote_plus(title.replace(' ', '_'))
+				snippet = ''.join(e.string for e in soup(results[0]['snippet'], convertEntities=soup.HTML_ENTITIES) if e)
+				self._msg(chan, "%s <%s>" % (snippet, url))
+			else:
+				self._msg(chan, "No results found for '%s'." % arg)
+		except urllib2.URLError:
+			self._msg(chan, "Unable to perform Wikipedia search.")
 
 	def _cmd_XKCD(self, nick, chan, arg):
 		"""xkcd - Provides a link to the specified XKCD comic, or the most recent if not specified."""
