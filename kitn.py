@@ -102,7 +102,7 @@ class KitnHandler(DefaultCommandHandler):
 		self.ACTION_RE = re.compile("\x01ACTION (\\w+)s %s\x01" % self.client.nick)
 
 		# Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
-		self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.*)$")
+		self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
 
 		# URLs
 		self.URL_RE = re.compile(r"""
