@@ -27,3 +27,7 @@ bing:
 
 google:
   apikey: 'AD2923NF3123_E123asdLL9845M45MKK'
+
+bitbucket:
+  username: SomeUser
+  password: Foobar

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import base64
 from collections import defaultdict, deque
 import datetime
 import functools
@@ -556,6 +557,34 @@ class KitnHandler(DefaultCommandHandler):
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
 		self._msg(chan, "%s: reminder #%s added for %s." % (nick, r_id, dateobj.strftime('%x %X %Z')))
 
+	def _cmd_BUG(self, nick, chan, arg):
+		"""bug - Report a bug with Kitn (creates an issue on the issue tracker)"""
+		usage = lambda: self._msg(chan, "Usage: bug <text>")
+
+		if not arg:
+			return usage()
+
+		data = {
+			'title': arg[:100],
+			'content': arg,
+			'responsible': 'Aiiane',
+			'kind': 'bug',
+		}
+
+		auth = base64.encodestring("%(username)s:%(password)s" % config['bitbucket'])[:-1]
+		req = urllib2.Request('https://api.bitbucket.org/1.0/repositories/Aiiane/kitn/issues/',
+			urlencode(data), {"Authorization": "Basic %s" % auth})
+
+		try:
+			result = urllib2.urlopen(req, timeout=5)
+		except urllib2.URLError:
+			logging.error("Failed to post new issue on Bitbucket:", exc_info=True)
+			return self._msg(chan, "Unable to create new issue.")
+
+		result = json.load(result)
+		self._msg(chan, "[%(status)s] %(title)s - %(comment_count)s comment(s), created on %(created_on)s" % result)
+		self._msg(chan, "http://git.aiiane.com/kitn/issue/%(local_id)s" % result)
+
 	def _cmd_CANCEL(self, nick, chan, arg):
 		"""cancel - Cancels the specified reminder."""
 		usage = lambda: self._msg(chan, "Usage: cancel <reminder #>")
@@ -651,6 +680,34 @@ class KitnHandler(DefaultCommandHandler):
 		except urllib2.URLError:
 			self._msg(chan, "Unable to perform Wiktionary search.")
 
+	def _cmd_FEATURE(self, nick, chan, arg):
+		"""bug - Request a feature for Kitn (creates an issue on the issue tracker)"""
+		usage = lambda: self._msg(chan, "Usage: feature <text>")
+
+		if not arg:
+			return usage()
+
+		data = {
+			'title': arg[:100],
+			'content': arg,
+			'responsible': 'Aiiane',
+			'kind': 'enhancement',
+		}
+
+		auth = base64.encodestring("%(username)s:%(password)s" % config['bitbucket'])[:-1]
+		req = urllib2.Request('https://api.bitbucket.org/1.0/repositories/Aiiane/kitn/issues/',
+			urlencode(data), {"Authorization": "Basic %s" % auth})
+
+		try:
+			result = urllib2.urlopen(req, timeout=5)
+		except urllib2.URLError:
+			logging.error("Failed to post new issue on Bitbucket:", exc_info=True)
+			return self._msg(chan, "Unable to create new issue.")
+
+		result = json.load(result)
+		self._msg(chan, "[%(status)s] %(title)s - %(comment_count)s comment(s), created on %(created_on)s" % result)
+		self._msg(chan, "http://git.aiiane.com/kitn/issue/%(local_id)s" % result)
+
 	def _cmd_FORGET(self, nick, chan, arg):
 		"""forget - Remove a factoid from the bot's knowledge."""
 		usage = lambda: self._msg("Usage: forget <keyword>")
@@ -743,6 +800,23 @@ class KitnHandler(DefaultCommandHandler):
 		logging.info("Added reminder #%s at %s" % (r_id, timestamp))
 		self._msg(chan, "%s: reminder #%s added for %s PST." % (nick, r_id,
 			datetime.datetime.fromtimestamp(timestamp).strftime('%x %X')))
+
+	def _cmd_ISSUE(self, nick, chan, arg):
+		"""issue - look up an issue on Kitn's issue tracker."""
+		usage = lambda: self._msg(chan, "Usage: issue <number>")
+
+		if not arg:
+			return usage()
+
+		try:
+			issue = int(arg)
+		except:
+			return usage()
+
+		data = urllib2.urlopen("https://api.bitbucket.org/1.0/repositories/Aiiane/kitn/issues/%d/" % issue)
+		result = json.load(data)
+		self._msg(chan, "[%(status)s] %(title)s - %(comment_count)s comment(s), created on %(created_on)s" % result)
+		self._msg(chan, "http://git.aiiane.com/kitn/issue/%d" % issue)
 
 	@admin_only
 	def _cmd_JOIN(self, nick, chan, arg):
