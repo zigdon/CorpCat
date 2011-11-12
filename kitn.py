@@ -495,6 +495,7 @@ class KitnHandler(DefaultCommandHandler):
 		self._msg(chan,
 			"I'm an IRC bot. My owner is Aaeriele and her owner is DaBigCheez.\nMore info is available at http://git.aiiane.com/kitn",
 		)
+	_cmd_HELP = _cmd_ABOUT # For now, 'help' will just alias to 'about'. Might add more interactive help later.
 
 	def _cmd_AT(self, nick, chan, arg):
 		"""at - Set up a reminder that occurs at the specified time."""
