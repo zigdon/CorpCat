@@ -514,7 +514,11 @@ class KitnHandler(DefaultCommandHandler):
 		content = m.group(4)
 
 		if len(time_val) == 1:
-			hour, minute = int(time_val[0]), 0
+			if len(time_val[0]) == 4:
+				# Military time
+				hour, minute = int(time_val[0][:-2]), int(time_val[0][-2:])
+			else:
+				hour, minute = int(time_val[0]), 0
 		else:
 			hour, minute = int(time_val[0]), int(time_val[1])
 
