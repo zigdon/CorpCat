@@ -90,6 +90,9 @@ class KitnHandler(DefaultCommandHandler):
 		self.replay_buffers = defaultdict(lambda: deque(maxlen=config['limits']['replay']))
 		self.last_join = defaultdict(dict)
 
+		# Last karma spam checks
+		self.last_karma = defaultdict(dict)
+
 		# Users present in channels
 		self.channel_userlists = defaultdict(set)
 
@@ -104,6 +107,9 @@ class KitnHandler(DefaultCommandHandler):
 
 		# Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
 		self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
+
+		# Karma - match "<nick>++"
+		self.KARMA_RE = re.compile(r"^([\w^`[\]|-]+)\+\+$")
 
 		# URLs
 		self.URL_RE = re.compile(r"""
@@ -286,12 +292,12 @@ class KitnHandler(DefaultCommandHandler):
 		# If default channels to join are specified, join them.
 		channels = s.get('channels', ())
 		for channel in channels:
-			helpers.join(client, channel)
+			helpers.join(self.client, channel)
 
 		# If server-specific user modes are specified, set them.
 		modes = s.get('modes')
 		if modes:
-			client.send('MODE', s['nick'], modes)
+			self.client.send('MODE', s['nick'], modes)
 
 		logging.info("Completed initial connection actions for %s." % self.client.host)
 		self.WELCOMED = True
@@ -361,6 +367,9 @@ class KitnHandler(DefaultCommandHandler):
 	def _emote(self, chan, msg):
 		self._ctcp(chan, "ACTION %s" % msg)
 
+	def _kick(self, chan, nick, msg):
+		self.client.send("KICK", chan, nick, ":%s" % msg)
+
 	def _parse_line(self, nick, chan, msg):
 		"""Parse an incoming line of chat for commands and URLs."""
 
@@ -398,6 +407,13 @@ class KitnHandler(DefaultCommandHandler):
 					return
 			logging.warning('Unknown action "%s".' % act)
 
+		# See if this is a karma increase
+		# (only for actual channels)
+		m = self.KARMA_RE.match(msg)
+		if chan.startswith('#') and m:
+			self._karma(nick, chan, msg, m.group(1))
+			return
+
 		# See if this is a highlight for someone not currently in-channel
 		# (only for actual channels, not PMs)
 		m = self.HIGHLIGHT_RE.match(msg)
@@ -412,6 +428,29 @@ class KitnHandler(DefaultCommandHandler):
 			prev = self._url(m.group(), nick, chan)
 			self._url_announce(chan, m.group(), prev)
 			return
+
+	def _karma(self, nick, chan, msg, target):
+		"""Check to see if we should add karma for a user."""
+		nick = nick.split('!')[0].lower()
+		now = time.time()
+		target = target.lower()
+
+		# Only allow a given user to give another given user karma once
+		# an hour.
+		if self.last_karma[nick].get(target) > now-3600:
+			return
+		self.last_karma[nick][target] = now
+
+		if nick == target:
+			self._kick(chan, nick, "instant karma")
+			return
+
+		existing = db.execute("SELECT karma FROM karma WHERE nick = ?", (target,)).fetchone()
+		if existing:
+			db.execute("UPDATE karma SET karma = ? WHERE nick = ?", (existing[0]+1, target))
+		else:
+			db.execute("INSERT INTO karma (nick, karma) VALUES (?,?)", (target, 1))
+		db.commit()
 
 	def _highlight(self, nick, chan, msg, target):
 		"""Check to see if we need to store a voicemail for a highlight message."""
@@ -828,6 +867,20 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Joining channel %s." % arg)
 		helpers.join(self.client, arg)
+
+	def _cmd_KARMA(self, nick, chan, arg):
+		"""karma - Look up the karma for a specified user."""
+		usage = lambda: self._msg(chan, "Usage: karma <nick>")
+
+		if not arg:
+			return usage()
+
+		karma = db.execute("SELECT karma FROM karma WHERE nick = ?", (arg.lower(),)).fetchone()
+		db.rollback()
+		if karma:
+			return self._msg(chan, "User '%s' has %s karma." % (arg, karma[0]))
+		else:
+			return self._msg(chan, "User '%s' has no karma." % (arg,)) 
 
 	def _cmd_LEARN(self, nick, chan, arg):
 		"""learn - Teach the bot a factoid identified by a keyword."""
@@ -1258,6 +1311,11 @@ if __name__ == '__main__':
 			chan TEXT,
 			contents TEXT,
 			timestamp INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS karma (
+			nick TEXT PRIMARY KEY,
+			karma INTEGER
 		)""")
 	db.commit()
 
