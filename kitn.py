@@ -607,7 +607,7 @@ class KitnHandler(DefaultCommandHandler):
 
 		data = {
 			'title': arg[:100],
-			'content': arg,
+			'content': "%s\n\n(Added via IRC command by %s)" % (arg, nick),
 			'responsible': 'Aiiane',
 			'kind': 'bug',
 		}
@@ -730,7 +730,7 @@ class KitnHandler(DefaultCommandHandler):
 
 		data = {
 			'title': arg[:100],
-			'content': arg,
+			'content': "%s\n\n(Added via IRC command by %s)" % (arg, nick),
 			'responsible': 'Aiiane',
 			'kind': 'enhancement',
 		}
