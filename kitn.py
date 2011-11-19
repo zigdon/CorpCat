@@ -974,6 +974,85 @@ class KitnHandler(DefaultCommandHandler):
 	def _cmd_QUIT(self, nick, chan, arg):
 		helpers.quit(self.client, 'Shutting down...')
 
+	def _cmd_QUOTE(self, nick, chan, arg):
+		"""quote - Add, remove, or look up quotes."""
+		usage = lambda: self._msg(chan, "Usage: quote [random | add <text> | remove <id> | get <id>]")
+
+		if not arg:
+			return usage()
+
+		args = arg.split(None, 1)
+		if args[0] == 'random':
+			max_quote_id = db.execute("SELECT MAX(id) FROM quotes").fetchone()
+			if not max_quote_id:
+				db.rollback()
+				return self._msg(chan, "No quotes found.")
+
+			cutoff = random.randint(1, max_quote_id[0])
+			quote = db.execute("""
+				SELECT id, adder, content, chan, timestamp
+				FROM quotes
+				WHERE id >= ?
+				ORDER BY id
+				LIMIT 1
+				""", (cutoff,)).fetchone()
+			db.rollback()
+			self._msg(chan, "#%s - %s (added by %s, %s ago)" % (
+					quote[0], quote[2], quote[1], timeago(int(time.time()-quote[4]))
+				))
+
+		elif args[0] == 'add':
+			if len(args) != 2:
+				return usage()
+
+			result = db.execute("INSERT INTO quotes (adder, content, chan, timestamp) VALUES (?,?,?,?)",
+					(nick.split('!')[0].lower(), args[1], chan, time.time()),
+				)
+			db.commit()
+			self._msg(chan, "Quote #%s added." % result.lastrowid)
+
+		elif args[0] == 'remove':
+			if len(args) != 2:
+				return usage()
+			try:
+				quote_id = int(args[1])
+			except (ValueError, TypeError):
+				return usage()
+
+			adder = db.execute("SELECT adder FROM quotes WHERE id = ?", (quote_id,)).fetchone()
+			db.rollback()
+			if not adder:
+				return self._msg(chan, "Quote #%s not found." % args[1])
+			if adder[0] != nick.split('!')[0].lower():
+				return self._msg(chan, "You may not remove quotes you did not add.")
+
+			db.execute("DELETE FROM quotes WHERE id = ?", (quote_id,))
+			db.commit()
+			self._msg(chan, "Quote #%s removed." % quote_id)
+
+		elif args[0] == 'get':
+			if len(args) != 2:
+				return usage()
+			try:
+				quote_id = int(args[1])
+			except (ValueError, TypeError):
+				return usage()
+
+			quote = db.execute("""
+				SELECT id, adder, content, chan, timestamp
+				FROM quotes
+				WHERE id = ?""", (quote_id,)).fetchone()
+			db.rollback()
+			if not quote:
+				return self._msg(chan, "Quote #%s not found." % quote_id)
+
+			self._msg(chan, "#%s - %s (added by %s, %s ago)" % (
+					quote[0], quote[2], quote[1], timeago(int(time.time()-quote[4]))
+				))
+
+		else:
+			return usage()
+
 	def _cmd_RECALL(self, nick, chan, arg):
 		"""recall - Display the text of a factoid, if it exists."""
 		usage = lambda: self._msg("Usage: recall <keyword>")
@@ -1318,6 +1397,14 @@ if __name__ == '__main__':
 		CREATE TABLE IF NOT EXISTS karma (
 			nick TEXT PRIMARY KEY,
 			karma INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS quotes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			adder TEXT,
+			chan TEXT,
+			content TEXT,
+			timestamp INTEGER
 		)""")
 	db.commit()
 
