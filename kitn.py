@@ -177,7 +177,9 @@ class KitnHandler(DefaultCommandHandler):
 		reminders = db.execute("SELECT id, nick, chan, content FROM reminders WHERE timestamp < ?", (time.time(),)).fetchall()
 		for r_id, nick, chan, content in reminders:
 			logging.info("Resolving reminder #%s" % r_id)
-			self._msg(chan, "%s: %s" % (nick, content))
+			msg = "%s: %s" % (nick, content)
+			self._msg(chan, msg)
+			self._highlight(self.client.nick, chan, msg, nick)
 			db.execute("DELETE FROM reminders WHERE id = ?", (r_id,))
 		db.commit()
 
