@@ -1268,36 +1268,6 @@ class KitnHandler(DefaultCommandHandler):
 		else:
 			self._msg(chan, "No results found for '%s'." % arg)
 
-	def _cmd_YOUTUBE(self, nick, chan, arg):
-		"""youtube - Does a YouTube search for the supplied query and returns the first result."""
-		usage = lambda: self._msg(chan, "Usage: youtube <query>")
-
-		if not arg:
-			return usage()
-
-		query = urlencode({
-			'q': arg,
-			'orderBy': 'relevance',
-			'alt': 'json',
-			'max-results': 1,
-		})
-
-		try:
-			result = json.load(urllib2.urlopen('http://gdata.youtube.com/feeds/api/videos?%s' % query))
-			videos = result['feed']['entry']
-
-			if not videos:
-				return self._msg(chan, "No results were found for the search request.")
-
-			video = videos[0]
-			self._msg(chan, "%(title)s <%(url)s>" % {
-					'title': video['title']['$t'],
-					'url': '> <'.join(l['href'] for l in video['link'] if l['rel'] == 'alternate'),
-				})
-		except:
-			logging.warning("Error while attempting to retrieve results from YouTube API:", exc_info=True)
-			self._msg(chan, "An error was encountered while trying to complete the search request.")
-
 	def _cmd_WP(self, nick, chan, arg):
 		"""wp - Search wikipedia and return a snippet about the top result."""
 		usage = lambda: self._msg(chan, "Usage: wp <query>")
@@ -1340,6 +1310,36 @@ class KitnHandler(DefaultCommandHandler):
 			))
 		except urllib2.URLError:
 			self._msg(chan, "Unable to look up comic #%d." % comic)
+
+	def _cmd_YOUTUBE(self, nick, chan, arg):
+		"""youtube - Does a YouTube search for the supplied query and returns the first result."""
+		usage = lambda: self._msg(chan, "Usage: youtube <query>")
+
+		if not arg:
+			return usage()
+
+		query = urlencode({
+			'q': arg,
+			'orderBy': 'relevance',
+			'alt': 'json',
+			'max-results': 1,
+		})
+
+		try:
+			result = json.load(urllib2.urlopen('http://gdata.youtube.com/feeds/api/videos?%s' % query))
+			videos = result['feed']['entry']
+
+			if not videos:
+				return self._msg(chan, "No results were found for the search request.")
+
+			video = videos[0]
+			self._msg(chan, "%(title)s <%(url)s>" % {
+					'title': video['title']['$t'],
+					'url': '> <'.join(l['href'] for l in video['link'] if l['rel'] == 'alternate'),
+				})
+		except:
+			logging.warning("Error while attempting to retrieve results from YouTube API:", exc_info=True)
+			self._msg(chan, "An error was encountered while trying to complete the search request.")
 
 def db_keyval(key, val=None, default=None, conn=None):
 	"""Fetch a value from our 'misc' table key-val store."""
