@@ -626,6 +626,39 @@ class KitnHandler(DefaultCommandHandler):
 		self._msg(chan, "[%(status)s] %(title)s - %(comment_count)s comment(s), created on %(created_on)s" % result)
 		self._msg(chan, "http://git.aiiane.com/kitn/issue/%(local_id)s" % result)
 
+	def _cmd_CALC(self, nick, chan, arg):
+		"""calc - Invoke the Google calculator with a given query and return the result."""
+		usage = lambda: self._msg(chan, "Usage: calc <expression>")
+
+		if not arg:
+			return usage()
+
+		data = urlencode({
+			'q': arg,
+			'hl': 'en',
+		})
+
+		try:
+			result = urllib2.urlopen("http://www.google.com/ig/calculator?%s" % data, timeout=5)
+		except urllib2.URLError:
+			logging.error("Error while querying Google Calculator:", exc_info=True)
+			return self._msg(chan, "An error occurred while querying the Google calculator.")
+
+		response = result.read()
+		m = re.match(r'''\{lhs: "(.*)",rhs: "(.*)",error: "(.*)",icc: (.*)\}''', response)
+		if not m:
+			logging.error("Unable to parse response from Google calculator: '%s'" % response)
+			return self._msg(chan, "Unable to parse response from querying the Google calculator.")
+
+		POWER_RE = re.compile(r'''\\x3csup\\x3e([\d,.]+)\\x3c/sup\\x3e''')
+
+		lhs, rhs = m.group(1), m.group(2)
+
+		lhs = POWER_RE.sub(r"^\1", lhs).replace(r"\x26#215;", 'x')
+		rhs = POWER_RE.sub(r"^\1", rhs).replace(r"\x26#215;", 'x')
+
+		self._msg(chan, "%s = %s" % (lhs, rhs))
+
 	def _cmd_CANCEL(self, nick, chan, arg):
 		"""cancel - Cancels the specified reminder."""
 		usage = lambda: self._msg(chan, "Usage: cancel <reminder #>")
