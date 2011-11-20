@@ -650,6 +650,9 @@ class KitnHandler(DefaultCommandHandler):
 			logging.error("Unable to parse response from Google calculator: '%s'" % response)
 			return self._msg(chan, "Unable to parse response from querying the Google calculator.")
 
+		if m.group(3) != "":
+			return self._msg(chan, "Unable to parse expression.")
+
 		POWER_RE = re.compile(r'''\\x3csup\\x3e([\d,.]+)\\x3c/sup\\x3e''')
 
 		lhs, rhs = m.group(1), m.group(2)
