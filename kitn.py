@@ -458,6 +458,11 @@ class KitnHandler(DefaultCommandHandler):
 		"""Check to see if we need to store a voicemail for a highlight message."""
 		if db_conn is None:
 			db_conn = db
+
+		# Don't store voicemail for PMs
+		if not chan.startswith('#'):
+			return
+
 		nick = nick.split('!')[0]
 		target = target.lower()
 		if target in self.channel_userlists[chan]:
