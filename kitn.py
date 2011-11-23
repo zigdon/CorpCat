@@ -179,7 +179,7 @@ class KitnHandler(DefaultCommandHandler):
 			logging.info("Resolving reminder #%s" % r_id)
 			msg = "%s: %s" % (nick, content)
 			self._msg(chan, msg)
-			self._highlight(self.client.nick, chan, msg, nick)
+			self._highlight(self.client.nick, chan, msg, nick, db_conn=db)
 			db.execute("DELETE FROM reminders WHERE id = ?", (r_id,))
 		db.commit()
 
@@ -454,24 +454,26 @@ class KitnHandler(DefaultCommandHandler):
 			db.execute("INSERT INTO karma (nick, karma) VALUES (?,?)", (target, 1))
 		db.commit()
 
-	def _highlight(self, nick, chan, msg, target):
+	def _highlight(self, nick, chan, msg, target, db_conn=None):
 		"""Check to see if we need to store a voicemail for a highlight message."""
+		if db_conn is None:
+			db_conn = db
 		nick = nick.split('!')[0]
 		target = target.lower()
 		if target in self.channel_userlists[chan]:
 			# Don't need voicemail for present users
 			return
 
-		seen = db.execute("SELECT nick FROM seen WHERE nick = ?", (target.lower(),)).fetchone()
-		db.rollback()
+		seen = db_conn.execute("SELECT nick FROM seen WHERE nick = ?", (target.lower(),)).fetchone()
+		db_conn.rollback()
 		if not seen:
 			# Don't need voicemail for a nick we've never seen say anything
 			return
 
 		# We've seen the nick before and they're not online, so store a voicemail.
-		result = db.execute("INSERT INTO voicemail (fromnick, tonick, chan, contents, timestamp) VALUES (?,?,?,?,?)",
+		result = db_conn.execute("INSERT INTO voicemail (fromnick, tonick, chan, contents, timestamp) VALUES (?,?,?,?,?)",
 			(nick, target, chan, msg, time.time()))
-		db.commit()
+		db_conn.commit()
 		self._msg(chan, "Added voicemail #%d for absent user %s." % (result.lastrowid, target))
 
 	def _url_announce(self, chan, url, prev):
