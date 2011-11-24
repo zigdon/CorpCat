@@ -181,7 +181,16 @@ class KitnHandler(DefaultCommandHandler):
 			self._msg(chan, msg)
 			self._highlight(self.client.nick, chan, msg, nick, db_conn=db)
 			db.execute("DELETE FROM reminders WHERE id = ?", (r_id,))
-		db.commit()
+			db.commit()
+
+		daily_reminders = db.execute("SELECT id, nick, chan, content, timestamp FROM daily WHERE timestamp < ?", (time.time(),)).fetchall()
+		for r_id, nick, chan, content, timestamp in daily_reminders:
+			logging.info("Resolving daily reminder #%s" % r_id)
+			msg = "%s: %s" % (nick, content)
+			self._msg(chan, msg)
+			self._highlight(self.client.nick, chan, msg, nick, db_conn=db)
+			db.execute("UPDATE daily SET timestamp = ? WHERE id = ?", (timestamp+86400, r_id))
+			db.commit()
 
 	def _check_for_new_xkcd(self, db):
 		# Wait until after handshakes
@@ -737,6 +746,51 @@ class KitnHandler(DefaultCommandHandler):
 	def _cmd_CUDDLE(self, nick, chan, arg):
 		"""cuddle - Ask the bot for a cuddle."""
 		self._emote(chan, "cuddles %s" % nick.split('!')[0])
+
+	def _cmd_DAILY(self, nick, chan, arg):
+		"""daily - Set up a daily reminder."""
+		usage = lambda: self._msg(chan, "Usage: daily [add <text> | remove <id>]")
+
+		if not arg:
+			return usage()
+
+		args = arg.split(None, 1)
+		if len(args) != 2:
+			return usage()
+
+		nick = nick.split('!')[0]
+
+		if args[0] == 'add':
+			now = time.time()
+
+			result = db.execute("INSERT INTO daily (nick, chan, timestamp, content) VALUES (?,?,?,?)",
+				(nick, chan, now+86400, arg))
+			r_id = result.lastrowid
+			db.commit()
+
+			logging.info("Added daily reminder #%s at %s" % (r_id, now))
+			return self._msg(chan, "%s: daily reminder #%s added for %s PST." % (nick, r_id,
+				datetime.datetime.fromtimestamp(now).strftime('%X')))
+
+		elif args[0] == 'remove':
+			try:
+				r_id = int(args[1])
+			except (TypeError, ValueError):
+				return self._msg(chan, "Reminder ID must be numeric.")
+			
+			exists = db.execute("SELECT nick FROM daily WHERE id = ?", (r_id,)).fetchone()
+			db.rollback()
+			if not exists:
+				return self._msg(chan, "No daily reminder exists with that ID.")
+			if exists[0] != nick:
+				return self._msg(chan, "You may not remove daily reminders set by someone else.")
+
+			db.execute("DELETE FROM daily WHERE id = ?", (r_id,))
+			db.commit()
+			return self._msg(chan, "%s: removed daily reminder #%s." % (nick, r_id))
+
+		else:
+			return usage()
 
 	def _cmd_DEFINE(self, nick, chan, arg):
 		"""wp - Search wiktionary and return a snippet about the top result."""
@@ -1478,6 +1532,14 @@ if __name__ == '__main__':
 			chan TEXT,
 			content TEXT,
 			timestamp INTEGER
+		)""")
+	db.execute("""
+		CREATE TABLE IF NOT EXISTS daily (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp INTEGER,
+			nick TEXT,
+			chan TEXT,
+			content TEXT
 		)""")
 	db.commit()
 
