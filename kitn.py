@@ -186,7 +186,7 @@ class KitnHandler(DefaultCommandHandler):
 		daily_reminders = db.execute("SELECT id, nick, chan, content, timestamp FROM daily WHERE timestamp < ?", (time.time(),)).fetchall()
 		for r_id, nick, chan, content, timestamp in daily_reminders:
 			logging.info("Resolving daily reminder #%s" % r_id)
-			msg = "%s: %s" % (nick, content)
+			msg = "%s: %s (#%s)" % (nick, content, r_id)
 			self._msg(chan, msg)
 			self._highlight(self.client.nick, chan, msg, nick, db_conn=db)
 			db.execute("UPDATE daily SET timestamp = ? WHERE id = ?", (timestamp+86400, r_id))
