@@ -1182,6 +1182,30 @@ class KitnHandler(DefaultCommandHandler):
 
 		self._msg(chan, "Factoid '%s' added." % args[0])
 
+	def _cmd_REMINDERS(self, nick, chan, arg):
+		"""reminders - Get a list of active reminders."""
+
+		nick = nick.split('!')[0]
+
+		if chan.startswith('#'):
+			return self._msg(chan, "%s: that command must be used in PM." % nick)
+
+		reminders = db.execute("SELECT id, chan, content FROM reminders WHERE nick = ?", (nick,)).fetchall()
+		daily_reminders = db.execute("SELECT id, chan, content FROM daily WHERE nick = ?", (nick,)).fetchall()
+
+		if not reminders and not daily_reminders:
+			return self._msg(chan, "You have no reminders set.")
+
+		if reminders:
+			self._msg(chan, "Pending once-off reminders:")
+			for r in reminders:
+				self._msg(chan, "#%s (%s): %s" % (r[0], r[1], r[2]))
+
+		if daily_reminders:
+			self._msg(chan, "Daily reminders:")
+			for r in daily_reminders:
+				self._msg(chan, "#%s (%s): %s" % (r[0], r[1], r[2]))
+
 	def _cmd_REPLAY(self, nick, chan, arg):
 		"""replay - Request replay-on-join for the current channel and user, or turn it off."""
 		usage = lambda: self._msg(chan, "Usage: replay <number> (0 for off).")
