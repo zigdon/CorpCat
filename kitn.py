@@ -703,7 +703,7 @@ class KitnHandler(DefaultCommandHandler):
 		"""catchphrase - Sets or removes an on-join catchphrase for this nick+channel."""
 
 		if not chan.startswith('#'):
-			return
+			return self._msg(chan, 'You can only set a catchphrase in a regular channel.')
 
 		nick = nick.split('!')[0]
 
