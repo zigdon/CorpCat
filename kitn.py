@@ -764,7 +764,7 @@ class KitnHandler(DefaultCommandHandler):
 			now = time.time()
 
 			result = db.execute("INSERT INTO daily (nick, chan, timestamp, content) VALUES (?,?,?,?)",
-				(nick, chan, now+86400, arg))
+				(nick, chan, now+86400, args[1]))
 			r_id = result.lastrowid
 			db.commit()
 
