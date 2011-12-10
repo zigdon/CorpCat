@@ -285,7 +285,7 @@ class KitnHandler(DefaultCommandHandler):
 		voicemail = db.execute("SELECT COUNT(*) FROM voicemail WHERE tonick = ?", (nick.lower(),)).fetchone()[0]
 		db.rollback()
 		if voicemail > 0:
-			self._msg(nick, "You have %d pending voicemails. Use '%svoicemail get <number>' to retrieve them." % (voicemail, config['sigil']))
+			self._msg(nick, "You have %d pending voicemails. Use '%svoicemail get <quantity>' to retrieve them." % (voicemail, config['sigil']))
 
 	def welcome(self, nick, chan, msg):
 		"""Trigger on-login actions via the WELCOME event."""
@@ -1312,7 +1312,7 @@ class KitnHandler(DefaultCommandHandler):
 
 	def _cmd_VOICEMAIL(self, nick, chan, arg):
 		"""voicemail - Access messages that were left while a user was offline."""
-		usage = lambda: self._msg(chan, "Usage: voicemail [get <number> | clear]")
+		usage = lambda: self._msg(chan, "Usage: voicemail [get <quantity> | clear]")
 
 		nick = nick.split('!')[0].lower()
 
