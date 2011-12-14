@@ -127,6 +127,11 @@ class KitnHandler(DefaultCommandHandler):
 					([a-zA-Z0-9-]+\.)+   # domain segments
 					[a-zA-Z]{2,4}        # TLD
 					(?=/)                # These URLs are required to at least have a /
+				|
+					# IPs
+					https?://                   # protocol
+					([0-9]{1,3}\.){3}[0-9]{1,3} # IP octets
+					(?=/)                       # IPs must be followed by a /
 				)
 
 				# And then allow any kind of URL path, except for unpaired parens
