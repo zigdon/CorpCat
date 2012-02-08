@@ -264,15 +264,17 @@ class KitnHandler(DefaultCommandHandler):
 		logging.info("[join] %s -> %s" % (nick, chan))
 		self.channel_userlists[chan].add(nick.lower())
 
-		if self.last_join[chan].get(nick, 0) + 60 > time.time():
+		last_join = self.last_join[chan].get(nick, 0)
+		now = time.time()
+		if last_join + 60 > now:
 			# On-join actions only trigger once a minute per channel
 			return
-		self.last_join[chan][nick] = time.time()
+		self.last_join[chan][nick] = now
 
 		# See if they have a catchphrase for this channel
 		catchphrase = db.execute("SELECT phrase FROM catchphrases WHERE nick = ? AND chan = ?", (nick, chan)).fetchone()
 		db.rollback()
-		if catchphrase:
+		if catchphrase and last_join + 3600 < now:
 			self._msg(chan, "« %s » - %s".decode('utf-8') % (catchphrase[0], nick))
 
 		# Check to see if they have replay enabled
