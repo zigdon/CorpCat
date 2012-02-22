@@ -1389,6 +1389,11 @@ class KitnHandler(DefaultCommandHandler):
 		if not arg:
 			return usage()
 
+		if arg[0] != '*':
+			arg = '*' + arg
+		if arg[-1] != '*':
+			arg = arg + '*'
+
 		result = db.execute("SELECT url FROM urls WHERE url GLOB ? ORDER BY timestamp DESC LIMIT 1", (arg,)).fetchone()
 		db.rollback()
 		if result:
