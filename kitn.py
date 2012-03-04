@@ -100,7 +100,7 @@ class KitnHandler(DefaultCommandHandler):
 		self.COMMAND_RE = re.compile(r"^(?:%s:\s+|%s)(\w+)(?:\s+(.*))?$" % (
 			self.client.nick,
 			re.escape(config['sigil']),
-		))
+		), re.IGNORECASE)
 
 		# Actions - match "\x01ACTION <something>s <nick>\x01"
 		self.ACTION_RE = re.compile("\x01ACTION (\\w+)s %s\x01" % self.client.nick)
