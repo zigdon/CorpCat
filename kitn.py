@@ -97,7 +97,7 @@ class KitnHandler(DefaultCommandHandler):
 		self.channel_userlists = defaultdict(set)
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
-		self.COMMAND_RE = re.compile(r"^(?:%s[:,]\s+|%s)(\w+)(?:\s+(.*))?$" % (
+		self.COMMAND_RE = re.compile(r"^(?:%s[:,]\s+|%s)(\w+)(?:\s+(.*))?[?!.]?$" % (
 			self.client.nick,
 			re.escape(config['sigil']),
 		), re.IGNORECASE)
