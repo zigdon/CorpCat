@@ -1240,6 +1240,11 @@ class KitnHandler(DefaultCommandHandler):
 			db.commit()
 			return self._msg(chan, '%s: You will now receive up to %d lines of replay when joining this channel.' % (nick, lines))
 
+	@is_action
+	def _cmd_SCRITCH(self, nick, chan, arg):
+		"""scritch - Scritch the kitn."""
+		self._emote(chan, "purrs")
+
 	def _cmd_SEARCH(self, nick, chan, arg):
 		"""search - Does a web search for the supplied query and returns the first result."""
 		usage = lambda: self._msg(chan, "Usage: search <query>")
