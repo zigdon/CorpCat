@@ -444,7 +444,7 @@ class KitnHandler(DefaultCommandHandler):
 		if m:
 			logging.info("[url] %s -> %s: %s" % (nick, chan, m.group()))
 			prev = self._url(m.group(), nick, chan)
-			self._url_announce(chan, m.group(), prev)
+			self._url_announce(chan, m.group(), prev, msg)
 			return
 
 	def _karma(self, nick, chan, msg, target):
@@ -497,7 +497,7 @@ class KitnHandler(DefaultCommandHandler):
 		db_conn.commit()
 		self._msg(chan, "Added voicemail #%d for absent user %s." % (result.lastrowid, target))
 
-	def _url_announce(self, chan, url, prev):
+	def _url_announce(self, chan, url, prev, msg):
 		"""Announce the info for a detected URL in the channel it was detected in."""
 
 		if chan not in config['urlannounce']:
@@ -533,7 +533,9 @@ class KitnHandler(DefaultCommandHandler):
 
 					condensed_title = ' '.join(title_tag.string.split())[:100]
 
-					if found_len < 0.6 * total_len:
+					if ('trigger warning' in msg.lower()) or ('TW' in msg):
+						logging.info("Not reporting title '%s' because of trigger warning in '%s'." % (condensed_title, msg))
+					elif found_len < 0.6 * total_len:
 						logging.info("Reporting title '%s' (found: %s, total: %s)" % (
 							condensed_title, found_len, total_len))
 						report_components.append('"%s"' % condensed_title)
