@@ -1197,8 +1197,8 @@ class KitnHandler(DefaultCommandHandler):
 		if chan.startswith('#'):
 			return self._msg(chan, "%s: that command must be used in PM." % nick)
 
-		reminders = db.execute("SELECT id, chan, content FROM reminders WHERE nick = ?", (nick,)).fetchall()
-		daily_reminders = db.execute("SELECT id, chan, content FROM daily WHERE nick = ?", (nick,)).fetchall()
+		reminders = db.execute("SELECT id, chan, content, timestamp FROM reminders WHERE nick = ?", (nick,)).fetchall()
+		daily_reminders = db.execute("SELECT id, chan, content, timestamp FROM daily WHERE nick = ?", (nick,)).fetchall()
 
 		if not reminders and not daily_reminders:
 			return self._msg(chan, "You have no reminders set.")
@@ -1206,12 +1206,12 @@ class KitnHandler(DefaultCommandHandler):
 		if reminders:
 			self._msg(chan, "Pending once-off reminders:")
 			for r in reminders:
-				self._msg(chan, "#%s (%s): %s" % (r[0], r[1], r[2]))
+				self._msg(chan, "#%s (%s, %s PST): %s" % (r[0], r[1], datetime.datetime.fromtimestamp(r[3]).strftime('%X'), r[2]))
 
 		if daily_reminders:
 			self._msg(chan, "Daily reminders:")
 			for r in daily_reminders:
-				self._msg(chan, "#%s (%s): %s" % (r[0], r[1], r[2]))
+				self._msg(chan, "#%s (%s, %s PST): %s" % (r[0], r[1], datetime.datetime.fromtimestamp(r[3]).strftime('%X'), r[2]))
 
 	def _cmd_REPLAY(self, nick, chan, arg):
 		"""replay - Request replay-on-join for the current channel and user, or turn it off."""
