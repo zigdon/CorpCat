@@ -95,6 +95,7 @@ class KitnHandler(DefaultCommandHandler):
 
 		# Users present in channels
 		self.channel_userlists = defaultdict(set)
+		self.channel_usercounts = {}
 
 		# Commands - match either "<nick>: " or the sigil character as a prefix
 		self.COMMAND_RE = re.compile(r"^(?:%s[:,]\s+|%s)(\w+)(?:\s+(.*))?[?!.]?$" % (
@@ -151,6 +152,7 @@ class KitnHandler(DefaultCommandHandler):
 		self.periodic_callbacks = {
 			'reminders': self._process_reminders,
 			'new_xkcd': self._check_for_new_xkcd,
+			'userlimit': self._adjust_channel_limits,
 		}
 		self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
 		self.periodic_thread.daemon = True
@@ -217,6 +219,16 @@ class KitnHandler(DefaultCommandHandler):
 						))
 			except urllib2.URLError:
 				logging.warning("Unable to load info for latest xkcd comic while checking for new.")
+
+	def _adjust_channel_limits(self, db):
+		if not self.WELCOMED:
+			return
+
+		for channel in config['userlimit']:
+			usercount = len(self.channel_userlists[channel])
+			if usercount != self.channel_usercounts.get(channel, 0):
+				self.client.send('MODE', channel, '+l %d' % (usercount+5))
+			self.channel_usercounts[channel] = usercount
 
 	def whoisbot(self, nick, chan, user, msg):
 		"""Add a bot to the known bots list based on WHOIS."""
