@@ -227,7 +227,7 @@ class KitnHandler(DefaultCommandHandler):
 		for channel in config['userlimit']:
 			usercount = len(self.channel_userlists[channel])
 			if usercount != self.channel_usercounts.get(channel, 0):
-				self.client.send('MODE', channel, '+l %d' % (usercount+5))
+				self.client.send('MODE', channel, '+l %d' % (usercount+2))
 			self.channel_usercounts[channel] = usercount
 
 	def whoisbot(self, nick, chan, user, msg):
@@ -406,6 +406,11 @@ class KitnHandler(DefaultCommandHandler):
 		# PMs to us should generally be replied to the other party, not ourself
 		if chan == self.client.nick:
 			chan = nick.split('!')[0]
+		
+		if chan.startswith('#'):
+			# If we're in a public channel and this is the fourth looks-like-spam line
+			if len(msg) > 100 and all(re.match(r"\S{100,}", x[2]) for x in list(self.replay_buffers[chan])[-3:]):
+				self.client.send('MODE', chan, '+M')
 
 		# See if this is a command we recognize
 		m = self.COMMAND_RE.match(msg)
