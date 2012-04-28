@@ -35,7 +35,7 @@ db = None
 def admin_only(f):
 	@functools.wraps(f)
 	def wrapper(self, nick, chan, arg):
-		if nick == 'Aaeriele!aiiane@hide-F3E0B19.aiiane.com':
+		if nick in ('Aaeriele!aiiane@hide-F3E0B19.aiiane.com', 'Aaeriele!~aiiane@hide-F3E0B19.aiiane.com'):
 			return f(self, nick, chan, arg)
 		else:
 			return self._msg(chan, "You are not allowed to run that command.")
