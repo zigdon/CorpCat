@@ -1232,6 +1232,43 @@ class KitnHandler(DefaultCommandHandler):
 			for r in daily_reminders:
 				self._msg(chan, "#%s (%s, %s PST): %s" % (r[0], r[1], datetime.datetime.fromtimestamp(r[3]).strftime('%X'), r[2]))
 
+	@admin_only
+	def _cmd_RENORMALIZE(self, nick, chan, arg):
+		"""renormalize - Rebuild the quotes table so that it has sequential IDs."""
+
+		try:
+			db.execute("""
+				CREATE TABLE quotes_new (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					adder TEXT,
+					chan TEXT,
+					content TEXT,
+					timestamp INTEGER
+				)""")
+
+			quotes_cursor = db.execute("SELECT adder, chan, content, timestamp FROM quotes")
+			if not quotes_cursor:
+				self._msg(chan, "Unable to rebuild quotes table; couldn't get quotes.")
+				db.rollback()
+				return
+
+			quote_counter = 0
+			for vals in quotes_cursor:
+				db.execute("INSERT INTO quotes_new (adder, chan, content, timestamp) VALUES (?,?,?,?)", vals)
+				quote_counter += 1
+
+			db.execute("DROP TABLE quotes")
+			db.execute("ALTER TABLE quotes_new RENAME TO quotes")
+			db.commit()
+
+			self._msg(chan, "Successfully rebuilt quotes table with %d entries." % quote_counter)
+
+		except:
+			logging.error("Unable to rebuild quotes table:", exc_info=True)
+			self._msg(chan, "Unable to rebuild quotes table.")
+			db.rollback()
+			return
+
 	def _cmd_REPLAY(self, nick, chan, arg):
 		"""replay - Request replay-on-join for the current channel and user, or turn it off."""
 		usage = lambda: self._msg(chan, "Usage: replay <number> (0 for off).")
