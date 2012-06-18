@@ -402,10 +402,12 @@ class KitnHandler(DefaultCommandHandler):
 
 	def _parse_line(self, nick, chan, msg):
 		"""Parse an incoming line of chat for commands and URLs."""
+		pm = False
 
 		# PMs to us should generally be replied to the other party, not ourself
 		if chan == self.client.nick:
 			chan = nick.split('!')[0]
+			pm = True
 		
 		if chan.startswith('#'):
 			# If we're in a public channel and this is the fourth looks-like-spam line
@@ -463,6 +465,11 @@ class KitnHandler(DefaultCommandHandler):
 			prev = self._url(m.group(), nick, chan)
 			self._url_announce(chan, m.group(), prev, msg)
 			return
+
+		# If we've gotten here and we're in a PM, we should say something
+		if pm and not chan.endswith(('.com', '.net', '.org', '.edu')):
+			self._msg(chan, "Sorry, I don't understand that (did you forget to use the command prefix?)."
+				" See '%shelp' for commands." % (config['sigil']))
 
 	def _karma(self, nick, chan, msg, target):
 		"""Check to see if we should add karma for a user."""
