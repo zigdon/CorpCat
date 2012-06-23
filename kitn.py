@@ -1306,6 +1306,9 @@ class KitnHandler(DefaultCommandHandler):
 		"""scritch - Scritch the kitn."""
 		self._emote(chan, "purrs")
 
+	# Alternate spelling
+	_cmd_SKRITCH = _cmd_SCRITCH
+
 	def _cmd_SEARCH(self, nick, chan, arg):
 		"""search - Does a web search for the supplied query and returns the first result."""
 		usage = lambda: self._msg(chan, "Usage: search <query>")
