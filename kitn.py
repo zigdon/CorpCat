@@ -1135,8 +1135,15 @@ class KitnHandler(DefaultCommandHandler):
 			if len(args) != 2:
 				return usage()
 
+			just_nick = nick.split('!')[0].lower()
+			join_time = self.last_join[chan].get(just_nick, 0)
+			if join_time > time.time() - 30:
+				logging.info("Marking %s as 'bot' because of quote add abuse.", nick)
+				self.KNOWN_BOTS.add(just_nick)
+				return
+
 			result = db.execute("INSERT INTO quotes (adder, content, chan, timestamp) VALUES (?,?,?,?)",
-					(nick.split('!')[0].lower(), args[1], chan, time.time()),
+					(just_nick, args[1], chan, time.time()),
 				)
 			db.commit()
 			self._msg(chan, "Quote #%s added." % result.lastrowid)
