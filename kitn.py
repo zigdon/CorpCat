@@ -245,7 +245,7 @@ class KitnHandler(DefaultCommandHandler):
 		"""Process server's notification of channel occupants."""
 		nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split())
 		logging.info("[namreply] %s -> %r" % (channel, nicks))
-		self.channel_userlists[channel] = nicks
+		self.channel_userlists[channel] = nicks | self.channel_userlists.get(channel, set())
 
 	def nick(self, nick, newnick):
 		"""Process server's notification of a nick change."""
@@ -408,7 +408,7 @@ class KitnHandler(DefaultCommandHandler):
 		if chan == self.client.nick:
 			chan = nick.split('!')[0]
 			pm = True
-		
+
 		if chan.startswith('#'):
 			# If we're in a public channel and this is the fourth looks-like-spam line
 			if len(msg) > 100 and all(re.match(r"\S{100,}", x[2]) for x in list(self.replay_buffers[chan])[-3:]):
@@ -810,7 +810,7 @@ class KitnHandler(DefaultCommandHandler):
 				r_id = int(args[1])
 			except (TypeError, ValueError):
 				return self._msg(chan, "Reminder ID must be numeric.")
-			
+
 			exists = db.execute("SELECT nick FROM daily WHERE id = ?", (r_id,)).fetchone()
 			db.rollback()
 			if not exists:
@@ -1012,7 +1012,7 @@ class KitnHandler(DefaultCommandHandler):
 		if karma:
 			return self._msg(chan, "User '%s' has %s karma." % (arg, karma[0]))
 		else:
-			return self._msg(chan, "User '%s' has no karma." % (arg,)) 
+			return self._msg(chan, "User '%s' has no karma." % (arg,))
 
 	def _cmd_LEARN(self, nick, chan, arg):
 		"""learn - Teach the bot a factoid identified by a keyword."""
