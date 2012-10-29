@@ -405,7 +405,7 @@ class KitnHandler(DefaultCommandHandler):
 		pm = False
 
 		# PMs to us should generally be replied to the other party, not ourself
-		if chan == self.client.nick:
+		if chan.lower() == self.client.nick.lower():
 			chan = nick.split('!')[0]
 			pm = True
 
