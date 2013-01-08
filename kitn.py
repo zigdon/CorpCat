@@ -747,7 +747,7 @@ class KitnHandler(DefaultCommandHandler):
 				self._msg(chan, "« %s » - %s".decode('utf-8') % (catchphrase[0], nick))
 			else:
 				self._msg(chan, "%s does not have a catchphrase set." % nick)
-		elif arg == 'delete':
+		elif arg in ('delete', 'remove', 'clear', 'erase', 'off'):
 			db.execute("DELETE FROM catchphrases WHERE nick = ? and chan = ?", (nick, chan))
 			db.commit()
 			self._msg(chan, "%s: catchphrase for %s cleared." % (nick, chan))
