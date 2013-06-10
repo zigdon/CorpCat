@@ -16,6 +16,9 @@ import time
 # import urllib2
 # from urlparse import urlparse
 
+import evelink
+import evelink.cache.shelf
+
 # from BeautifulSoup import BeautifulSoup as soup
 from oyoyo.client import IRCApp, IRCClient
 from oyoyo.cmdhandler import DefaultCommandHandler
@@ -40,6 +43,15 @@ def admin_only(f):
             return f(self, nick, chan, arg)
         else:
             return self._msg(chan, "You are not allowed to run that command.")
+    return wrapper
+
+def pm_only(f):
+    @functools.wraps(f)
+    def wrapper(self, nick, chan, arg):
+        if chan.startswith("#"):
+            return self._msg(chan, "This command is accepted only in PM.")
+        else:
+            return f(self, nick, chan, arg)
     return wrapper
 
 def is_action(f):
@@ -145,6 +157,7 @@ class CorpHandler(DefaultCommandHandler):
 
     def privmsg(self, nick, chan, msg):
         logging.debug("[message] %s -> %s: %s" % (nick, chan, msg))
+        msg = msg.lstrip("!")
         self._parse_line(nick, chan, msg)
 
     def notice(self, nick, chan, msg):
@@ -163,6 +176,10 @@ class CorpHandler(DefaultCommandHandler):
     def _kick(self, chan, nick, msg):
         self.client.send("KICK", chan, nick, ":%s" % msg)
 
+    def _ts(self, timestamp):
+        date = datetime.date.fromtimestamp(int(timestamp))
+        return "%04d-%02d-%02d" % (date.year, date.month, date.day)
+
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
         pm = False
@@ -172,17 +189,23 @@ class CorpHandler(DefaultCommandHandler):
             chan = nick.split('!')[0]
             pm = True
 
-        if chan.startswith('#'):
-            # If we're in a public channel and this is the fourth looks-like-spam line
-            if len(msg) > 100 and all(re.match(r"\S{100,}", x[2]) for x in list(self.replay_buffers[chan])[-3:]):
-                self.client.send('MODE', chan, '+M')
+        # Ignore services
+        if chan in ('NickServ', 'ChanServ', 'BotServ'):
+            return
 
         # See if this is a command we recognize
         m = self.COMMAND_RE.match(msg)
-        if m:
+        if m or pm:
             logging.info("[cmd] %s -> %s: %s" % (nick, chan, msg))
-            cmd = m.group(1)
-            arg = m.group(2)
+            if pm:
+                try:
+                    cmd, arg = msg.split(None, 1)
+                except:
+                    cmd = msg
+                    arg = None
+            else:
+                cmd = m.group(1)
+                arg = m.group(2)
             cmd_func = '_cmd_%s' % cmd.upper()
             if hasattr(self, cmd_func):
                 try:
@@ -195,7 +218,7 @@ class CorpHandler(DefaultCommandHandler):
                 logging.warning('Unknown command "%s".' % cmd)
 
         # If we've gotten here and we're in a PM, we should say something
-        if pm and not nick.startswith("NickServ"):
+        if pm:
             logging.info("[unknown] %s -> %s" % (nick, msg))
             self._msg(chan, "Sorry, I don't understand that")
 
@@ -211,6 +234,40 @@ class CorpHandler(DefaultCommandHandler):
 
         self._msg(chan, "Joining channel %s." % arg)
         helpers.join(self.client, arg)
+
+    @pm_only
+    def _cmd_ADDKEY(self, nick, chan, args):
+        """add key - add a key for a character."""
+        usage = lambda: self._msg(chan, "Usage: add key <keyid> <vcode>.")
+
+        if not args:
+            return usage()
+
+        key_id, vcode = args.split()
+
+        if not vcode:
+            return usage()
+
+        self._msg(chan, "Verifying new key...")
+        try:
+            api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
+            account = evelink.account.Account(api=api)
+            result = account.key_info()
+        except evelink.api.APIError as e:
+            self._msg(chan, "Error: %s" %e)
+            return
+
+        if result:
+            if result['expire_ts']:
+                expire = self._ts(result['expire_ts'])
+            else:
+                expire = 'Never'
+
+            self._msg(chan, "expires: %s, type: %s, charscters: %s" % (
+                        expire, result['type'],
+                        ", ".join(char['name'] for char in result['characters'].itervalues())))
+        else:
+            self._msg(chan, "invalid key.")
 
     @admin_only
     def _cmd_PART(self, nick, chan, arg):
@@ -279,6 +336,7 @@ if __name__ == '__main__':
     db.execute("""
         CREATE TABLE IF NOT EXISTS characters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            characterId INTEGER,
             name TEXT,
             apiKey INTEGER
         )""")
@@ -286,6 +344,7 @@ if __name__ == '__main__':
 
     app = IRCApp()
     clients = {}
+    cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
     for server, conf in config['servers'].iteritems():
         client = IRCClient(
