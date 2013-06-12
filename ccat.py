@@ -222,6 +222,53 @@ class CorpHandler(DefaultCommandHandler):
             logging.info("[unknown] %s -> %s" % (nick, msg))
             self._msg(chan, "Sorry, I don't understand that")
 
+    # DATABASE
+    def _get_person(self, nick):
+        """return (create if needed) a person from the database."""
+
+        c = db.cursor()
+        result = c.execute("SELECT id FROM people WHERE nick=?", (nick,)).fetchone()
+        if result:
+            pid = result[0]
+        else:
+            c.execute("INSERT INTO people (nick) VALUES (?)", (nick,))
+            db.commit()
+            pid = c.lastrowid
+
+        return pid
+
+    def _update_key(self, person, key_id, vcode, details):
+        """Stores a key and the characters provided by it."""
+
+        output = []
+        c = db.cursor()
+        result = c.execute("SELECT id FROM apikeys WHERE keyid=?", (key_id,)).fetchone()
+        if not result:
+            output.append("Saving new key...")
+            c.execute("INSERT INTO apikeys "
+                      "(keyid, vcode, person, accessMask, type, expires) "
+                      "VALUES (?, ?, ?, ?, ?, ?)", (key_id, vcode, person,
+                       details['access_mask'], details['type'], details['expire_ts']))
+            db.commit()
+            kid = c.lastrowid
+        else:
+            kid = result[0]
+
+        for cid, char in details['characters'].iteritems():
+            result = c.execute("SELECT id FROM characters WHERE characterId = ?", (cid,)).fetchone()
+            if result:
+                c.execute("UPDATE characters SET corporationId=?, corporationName=? "
+                          "WHERE id=?", (char['corp']['id'], char['corp']['name'], result[0]))
+            else:
+                output.append("Adding new character: %s" % char['name'])
+                c.execute("INSERT INTO characters "
+                          "(characterId, name, corporationId, corporationName, apiKeyId) "
+                          "VALUES (?, ?, ?, ?, ?)",
+                           (cid, char['name'], char['corp']['id'], char['corp']['name'], kid))
+            db.commit()
+
+        return output
+
 
     # COMMANDS
     @admin_only
@@ -248,7 +295,7 @@ class CorpHandler(DefaultCommandHandler):
         if not vcode:
             return usage()
 
-        self._msg(chan, "Verifying new key...")
+        self._msg(chan, "Loading key...")
         try:
             api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
             account = evelink.account.Account(api=api)
@@ -268,6 +315,12 @@ class CorpHandler(DefaultCommandHandler):
                         ", ".join(char['name'] for char in result['characters'].itervalues())))
         else:
             self._msg(chan, "invalid key.")
+            return
+
+        person = self._get_person(nick=nick)
+        for line in self._update_key(person=person, key_id=key_id, vcode=vcode, details=result):
+            self._msg(chan, line)
+
 
     @admin_only
     def _cmd_PART(self, nick, chan, arg):
@@ -296,6 +349,7 @@ class CorpHandler(DefaultCommandHandler):
         """utc - Responds with the current time, UTC."""
         self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
 
+
 def db_keyval(key, val=None, default=None, conn=None):
     """Fetch a value from our 'misc' table key-val store."""
     if conn is None:
@@ -322,7 +376,7 @@ if __name__ == '__main__':
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             keyid INTEGER,
             vcode TEXT,
-            person INTEGER,
+            personId INTEGER,
             accessMask INTEGER,
             type TEXT,
             expires INTEGER
@@ -338,7 +392,9 @@ if __name__ == '__main__':
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             characterId INTEGER,
             name TEXT,
-            apiKey INTEGER
+            corporationId INTEGER,
+            corporationName TEXT,
+            apiKeyId INTEGER
         )""")
     db.commit()
 
