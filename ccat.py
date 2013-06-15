@@ -103,7 +103,7 @@ class CorpHandler(DefaultCommandHandler):
         """When a user joins a channel..."""
         nick = nick.split('!')[0]
         logging.info("[join] %s -> %s" % (nick, chan))
-        self._identify(nick, lambda: self.corpvoice(chan, nick))
+        self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
 
     def part(self, nick, chan):
         logging.info("[part] %s -> %s" % (nick, chan))
@@ -115,7 +115,7 @@ class CorpHandler(DefaultCommandHandler):
             return
 
         corps = set(c.corpname for key in person.keys for c in key.characters)
-        if 'Valkyries of Night' in corps:
+        if config['corp']['name'] in corps:
             self._voice(chan, nick)
 
     def welcome(self, nick, chan, msg):
@@ -315,6 +315,8 @@ class CorpHandler(DefaultCommandHandler):
 
         self._msg(chan, "Loading key...")
         self._add_key(person, key_id, vcode)
+        self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+
 
     def _cmd_WHOIS(self, nick, chan, args):
         """Look up a person or character."""
