@@ -1,0 +1,22 @@
+# What server(s) to connect to, and credentials/channels to join by default.
+servers:
+  irc.freenode.net:
+    port: 6667
+    nick: CorpCat
+    name: "Maintained by you"
+    channels:
+      - '#mychan'
+    auth:
+      to: NickServ
+      msg: 'identify sekrit'
+
+sigil: '!'
+
+limits:
+  replay: 20
+
+database:
+  path: 'corpcat.sqlite3'
+
+admin:
+  - 'admin!user@example.com'
