@@ -179,9 +179,8 @@ class CorpHandler(DefaultCommandHandler):
             return True
 
         self._msg(config['servers'][self.client.host]['auth']['to'],
-                  'acc %s' % nick)
+                  'acc %s *' % nick)
         if callback is not None:
-            logging.info("setting callback for %s" % nick)
             self.callbacks[nick.lower()] = callback
 
         return False
@@ -201,14 +200,12 @@ class CorpHandler(DefaultCommandHandler):
 
         if chan == config['servers'][self.client.host]['auth']['to']:
             logging.info("[nickserv] %s" % msg)
-            m = re.search(r'(\w+) ACC (\d)', msg)
+            m = re.search(r'(\w+) -> .* ACC (\d)', msg)
             if m is not None:
-                user = m.group(0).lower()
+                user = m.group(1).lower()
                 if m.group(2) == "3":
-                    logging.info("[identified] %s" % user)
                     self.identified[user] = 1
                     if user in self.callbacks:
-                        logging.info("[callback] %s" % user)
                         self.callbacks[user]()
                         del(self.callbacks[user])
                 else:
