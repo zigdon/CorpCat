@@ -18,6 +18,9 @@ from oyoyo.cmdhandler import DefaultCommandHandler
 from oyoyo import helpers, ircevents
 import yaml
 
+import time
+import threading
+
 ircevents.numeric_events["335"] = 'whoisbot'
 ircevents.all_events.append('whoisbot')
 ircevents.numeric_events["307"] = 'whoisregistered'
@@ -88,6 +91,36 @@ class CorpHandler(DefaultCommandHandler):
 
         self.callbacks = defaultdict(None)
         self.identified = defaultdict(None)
+        self.to_identify = set()
+
+        self.periodic_callbacks = {
+            'identifier': self._process_identify_queue,
+        }
+
+        self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
+        self.periodic_thread.daemon = True
+        self.periodic_thread.start()
+
+    def _periodic_callback(self):
+        """Run registered callbacks every so often (~1 Hz)"""
+
+        while True:
+            start = time.time()
+            for cb in self.periodic_callbacks.keys():
+                try:
+                    self.periodic_callbacks[cb]()
+                except:
+                    logging.error("Error while processing periodic callback '%s'." % cb, exc_info=True)
+                duration = time.time() - start
+
+                # Run no more often than once a second
+                if duration < 1.0:
+                    time.sleep(1.0 - duration)
+
+    def _process_identify_queue(self):
+        if len(self.to_identify) > 0:
+            nick = self.to_identify.pop()
+            self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -102,8 +135,17 @@ class CorpHandler(DefaultCommandHandler):
     def join(self, nick, chan):
         """When a user joins a channel..."""
         nick = nick.split('!')[0]
-        logging.info("[join] %s -> %s" % (nick, chan))
-        self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+        if nick == self.client.nick:
+            logging.info("[joined] %s" % chan)
+        else:
+            logging.info("[join] %s -> %s" % (nick, chan))
+            self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+
+    def namreply(self, nick, chan, equals, channel, nicklist):
+        nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split())
+        logging.info("[namreply] %s -> %r" % (channel, nicks))
+        self.to_identify = nicks | self.to_identify
+
 
     def part(self, nick, chan):
         logging.info("[part] %s -> %s" % (nick, chan))
@@ -264,17 +306,22 @@ class CorpHandler(DefaultCommandHandler):
             logging.warn("Invalid key")
             return None
 
-        key = ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
-        person.keys += [key]
+        try:
+            key = ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
+            person.keys += [key]
+            self.session.add(key)
+            self.session.commit()
 
-        for char in result['characters'].itervalues():
-            if not self.session.query(Character).filter(Character.charid==char['id']).first():
-                key.characters += [
-                  Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
-                ]
+            for char in result['characters'].itervalues():
+                if not self.session.query(Character).filter(Character.charid==char['id']).first():
+                    key.characters += [
+                      Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
+                    ]
 
-        self.session.add(key)
-        self.session.commit()
+            self.session.add(key)
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
 
         return key
 
