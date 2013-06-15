@@ -86,6 +86,9 @@ class CorpHandler(DefaultCommandHandler):
         # Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
         self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
 
+        self.callbacks = defaultdict(None)
+        self.identified = defaultdict(None)
+
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
         nick = nick.split('!')[0].lower()
@@ -100,7 +103,20 @@ class CorpHandler(DefaultCommandHandler):
         """When a user joins a channel..."""
         nick = nick.split('!')[0]
         logging.info("[join] %s -> %s" % (nick, chan))
-        self.channel_userlists[chan].add(nick.lower())
+        self._identify(nick, lambda: self.corpvoice(chan, nick))
+
+    def part(self, nick, chan):
+        logging.info("[part] %s -> %s" % (nick, chan))
+        del(self.identified[nick.lower()])
+
+    def corpvoice(self, chan, nick):
+        person = self.session.query(Person).filter(Person.nick==nick).first()
+        if person is None:
+            return
+
+        corps = set(c.corpname for key in person.keys for c in key.characters)
+        if 'Valkyries of Night' in corps:
+            self._voice(chan, nick)
 
     def welcome(self, nick, chan, msg):
         """Trigger on-login actions via the WELCOME event."""
@@ -149,9 +165,26 @@ class CorpHandler(DefaultCommandHandler):
     def _kick(self, chan, nick, msg):
         self.client.send("KICK", chan, nick, ":%s" % msg)
 
+    def _voice(self, chan, nick):
+        self.client.send("MODE", chan, '+v', nick)
+
     def _ts(self, timestamp):
         date = datetime.date.fromtimestamp(int(timestamp))
         return "%04d-%02d-%02d" % (date.year, date.month, date.day)
+
+    def _identify(self, nick, callback=None):
+        if nick in self.identified:
+            if callback is not None:
+                callback(nick)
+            return True
+
+        self._msg(config['servers'][self.client.host]['auth']['to'],
+                  'acc %s' % nick)
+        if callback is not None:
+            logging.info("setting callback for %s" % nick)
+            self.callbacks[nick.lower()] = callback
+
+        return False
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
@@ -163,7 +196,24 @@ class CorpHandler(DefaultCommandHandler):
             pm = True
 
         # Ignore services
-        if chan in ('NickServ', 'ChanServ', 'BotServ'):
+        if chan in ('ChanServ', 'BotServ'):
+            return
+
+        if chan == config['servers'][self.client.host]['auth']['to']:
+            logging.info("[nickserv] %s" % msg)
+            m = re.search(r'(\w+) ACC (\d)', msg)
+            if m is not None:
+                user = m.group(0).lower()
+                if m.group(2) == "3":
+                    logging.info("[identified] %s" % user)
+                    self.identified[user] = 1
+                    if user in self.callbacks:
+                        logging.info("[callback] %s" % user)
+                        self.callbacks[user]()
+                        del(self.callbacks[user])
+                else:
+                    del(self.identified[user])
+
             return
 
         # See if this is a command we recognize
