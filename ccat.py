@@ -10,6 +10,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 import sys
+from inspect import getmembers, getdoc, ismethod
 
 import evelink
 import evelink.cache.shelf
@@ -369,13 +370,13 @@ class CorpHandler(DefaultCommandHandler):
 
     def _cmd_HELP(self, nick, mask, chan, args):
         """Show all known commands. help <cmd> for more details."""
-        cmds = set(x[5:].lower() for x in dir(self) if x[0:5] == '_cmd_')
+        cmds = set(x[0][5:].lower() for x in getmembers(self, ismethod) if x[0][0:5] == '_cmd_')
         if not args:
             self._msg(chan, '%s: known commands: %s' % (nick, ", ".join(sorted(cmds))))
             return
 
         if args.lower() in cmds:
-            self._msg(chan, '%s: %s - %s' % (nick, args, getattr(self, '_cmd_%s' % args.upper()).__doc__))
+            self._msg(chan, '%s: %s - %s' % (nick, args, getdoc(getattr(self, '_cmd_%s' % args.upper()))))
             return
 
     def _cmd_WHOIS(self, nick, mask, chan, args):
