@@ -9,6 +9,7 @@ import re
 from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+import sys
 
 import evelink
 import evelink.cache.shelf
@@ -34,20 +35,20 @@ Base = declarative_base()
 
 def admin_only(f):
     @functools.wraps(f)
-    def wrapper(self, nick, chan, arg):
-        if nick in config['admin']:
-            return f(self, nick, chan, arg)
+    def wrapper(self, nick, mask, chan, arg):
+        if '%s!%s' % (nick, mask) in config['admin']:
+            return f(self, nick, mask, chan, arg)
         else:
-            return self._msg(chan, "You are not allowed to run that command.")
+            return self._msg(chan, "%s: You are not allowed to run that command." % nick)
     return wrapper
 
 def pm_only(f):
     @functools.wraps(f)
-    def wrapper(self, nick, chan, arg):
+    def wrapper(self, nick, mask, chan, arg):
         if chan.startswith("#"):
-            return self._msg(chan, "This command is accepted only in PM.")
+            return self._msg(chan, "%s: This command is accepted only in PM." % nick)
         else:
-            return f(self, nick, chan, arg)
+            return f(self, nick, mask, chan, arg)
     return wrapper
 
 def is_action(f):
@@ -142,7 +143,7 @@ class CorpHandler(DefaultCommandHandler):
             self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
 
     def namreply(self, nick, chan, equals, channel, nicklist):
-        nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split())
+        nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
         logging.info("[namreply] %s -> %r" % (channel, nicks))
         self.to_identify = nicks | self.to_identify
 
@@ -240,7 +241,7 @@ class CorpHandler(DefaultCommandHandler):
         if chan in ('ChanServ', 'BotServ'):
             return
 
-        if chan == config['servers'][self.client.host]['auth']['to']:
+        if chan.lower() == config['servers'][self.client.host]['auth']['to'].lower():
             logging.info("[nickserv] %s" % msg)
             m = re.search(r'(\w+) -> .* ACC (\d)', msg)
             if m is not None:
@@ -269,9 +270,10 @@ class CorpHandler(DefaultCommandHandler):
                 cmd = m.group(1)
                 arg = m.group(2)
             cmd_func = '_cmd_%s' % cmd.upper()
+            nick, mask = nick.split('!', 1)
             if hasattr(self, cmd_func):
                 try:
-                    getattr(self, cmd_func)(nick, chan, arg)
+                    getattr(self, cmd_func)(nick, mask, chan, arg)
                 except:
                     logging.error("Exception while attempting to process command '%s'" % cmd, exc_info=True)
                 # Don't try to parse a URL in a recognized command
@@ -328,8 +330,8 @@ class CorpHandler(DefaultCommandHandler):
 
     # COMMANDS
     @admin_only
-    def _cmd_JOIN(self, nick, chan, arg):
-        """part - Make the bot join the specified channel."""
+    def _cmd_JOIN(self, nick, mask, chan, arg):
+        """ADMIN: join <channel> - Make the bot join the specified channel."""
         usage = lambda: self._msg(chan, "Usage: join <channel>")
 
         if not arg:
@@ -339,8 +341,8 @@ class CorpHandler(DefaultCommandHandler):
         helpers.join(self.client, arg)
 
     @pm_only
-    def _cmd_ADDKEY(self, nick, chan, args):
-        """add key - add an api key for a person."""
+    def _cmd_ADDKEY(self, nick, mask, chan, args):
+        """addkey <keyid> <vcode> - add an api key for a person (PM only)."""
         usage = lambda: self._msg(chan, "Usage: add key <keyid> <vcode>.")
 
         if not args:
@@ -365,14 +367,25 @@ class CorpHandler(DefaultCommandHandler):
         self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
 
 
-    def _cmd_WHOIS(self, nick, chan, args):
-        """Look up a person or character."""
+    def _cmd_HELP(self, nick, mask, chan, args):
+        """Show all known commands. help <cmd> for more details."""
+        cmds = set(x[5:].lower() for x in dir(self) if x[0:5] == '_cmd_')
+        if not args:
+            self._msg(chan, '%s: known commands: %s' % (nick, ", ".join(sorted(cmds))))
+            return
+
+        if args.lower() in cmds:
+            self._msg(chan, '%s: %s - %s' % (nick, args, getattr(self, '_cmd_%s' % args.upper()).__doc__))
+            return
+
+    def _cmd_WHOIS(self, nick, mask, chan, args):
+        """whois <nick|character> - Look up details of a person or character."""
 
         person = self.session.query(Person).filter(Person.nick==args).first()
         if person is not None:
             chars = set(c for key in person.keys for c in key.characters)
-            self._msg(chan, "%s has %d api key(s) and %d character(s): %s"
-                      % (person.nick, len(person.keys), len(chars),
+            self._msg(chan, "%s: %s has %d api key(s) and %d character(s): %s"
+                      % (nick, person.nick, len(person.keys), len(chars),
                          ", ".join("%s (%s)" % (c.name, c.corpname) for c in chars)))
 
             return
@@ -381,20 +394,20 @@ class CorpHandler(DefaultCommandHandler):
         if chars is not None:
             if len(chars) == 1:
                 char = chars[0]
-                self._msg(chan, "%s (%s) is owned by %s." %
-                  (char.name, char.corpname, char.api.person.nick))
+                self._msg(chan, "%s: %s (%s) is owned by %s." %
+                  (nick, char.name, char.corpname, char.api.person.nick))
             else:
-                self._msg(chan, "%d matches: %s" % (len(chars), ", ".join(c.name for c in chars)))
+                self._msg(chan, "%s: %d matches: %s" % (nick, len(chars), ", ".join(c.name for c in chars)))
 
             return;
 
-        self._msg(chan, "Couldn't find %s." % args)
+        self._msg(chan, "%s: Couldn't find %s." % (nick, args))
 
 
     @admin_only
-    def _cmd_PART(self, nick, chan, arg):
-        """part - Make the bot leave the specified channel, or if not specified, the channel the message was in."""
-        usage = lambda: self._msg(chan, "Usage: part [<channel>]")
+    def _cmd_PART(self, nick, mask, chan, arg):
+        """ADMIN: part [<channel>] - Make the bot leave the specified channel, or if not specified, the channel the message was in."""
+        usage = lambda: self._msg(chan, "%s: Usage: part [<channel>]" % nick)
 
         if not arg:
             if chan.startswith('#'):
@@ -402,21 +415,23 @@ class CorpHandler(DefaultCommandHandler):
             else:
                 return usage()
 
-        self._msg(chan, "Leaving channel %s." % arg)
+        self._msg(chan, "%s: Leaving channel %s." % (nick, arg))
         helpers.part(self.client, arg)
 
     @admin_only
-    def _cmd_QUIT(self, nick, chan, arg):
+    def _cmd_QUIT(self, nick, mask, chan, arg):
+        """ADMIN: shut down."""
         helpers.quit(self.client, 'Shutting down...')
 
     @admin_only
-    def _cmd_SRV(self, nick, chan, arg):
+    def _cmd_SRV(self, nick, mask, chan, arg):
+        """ADMIN: srv <args>: send the server arbitrary commands."""
         if arg:
             self.client.send(arg)
 
-    def _cmd_UTC(self, nick, chan, arg):
+    def _cmd_UTC(self, nick, mask, chan, arg):
         """utc - Responds with the current time, UTC."""
-        self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
+        self._msg(chan, "%s: %s" % (nick, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' ')))
 
 class Person(Base):
     __tablename__ = 'people'
@@ -476,7 +491,12 @@ class Character(Base):
 
 if __name__ == '__main__':
 
-    with open('config.yaml') as f:
+    if len(sys.argv) > 1:
+        conf = sys.argv[1]
+    else:
+        conf = 'config.yaml'
+
+    with open(conf) as f:
         config = yaml.safe_load(f)
 
     app = IRCApp()
