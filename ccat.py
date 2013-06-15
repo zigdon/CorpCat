@@ -254,7 +254,7 @@ class CorpHandler(DefaultCommandHandler):
 
     @pm_only
     def _cmd_ADDKEY(self, nick, chan, args):
-        """add key - add a key for a character."""
+        """add key - add an api key for a person."""
         usage = lambda: self._msg(chan, "Usage: add key <keyid> <vcode>.")
 
         if not args:
@@ -276,6 +276,31 @@ class CorpHandler(DefaultCommandHandler):
 
         self._msg(chan, "Loading key...")
         self._add_key(person, key_id, vcode)
+
+    def _cmd_WHOIS(self, nick, chan, args):
+        """Look up a person or character."""
+
+        person = self.session.query(Person).filter(Person.nick==args).first()
+        if person is not None:
+            chars = set(c for key in person.keys for c in key.characters)
+            self._msg(chan, "%s has %d api key(s) and %d character(s): %s"
+                      % (person.nick, len(person.keys), len(chars),
+                         ", ".join("%s (%s)" % (c.name, c.corpname) for c in chars)))
+
+            return
+
+        chars = self.session.query(Character).filter(Character.name.like("%%%s%%" % args)).all()
+        if chars is not None:
+            if len(chars) == 1:
+                char = chars[0]
+                self._msg(chan, "%s (%s) is owned by %s." %
+                  (char.name, char.corpname, char.api.person.nick))
+            else:
+                self._msg(chan, "%d matches: %s" % (len(chars), ", ".join(chars)))
+
+            return;
+
+        self._msg(chan, "Couldn't find %s." % args)
 
 
     @admin_only
