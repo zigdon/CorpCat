@@ -9,9 +9,10 @@ import functools
 import logging
 # import random
 import re
-import sqlite3
+from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
+from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 # import threading
-import time
 # from urllib import urlencode, quote_plus
 # import urllib2
 # from urlparse import urlparse
@@ -35,6 +36,7 @@ logging.basicConfig(level=logging.INFO)
 app = None
 config = None
 db = None
+Base = declarative_base()
 
 def admin_only(f):
     @functools.wraps(f)
@@ -74,6 +76,10 @@ class CorpHandler(DefaultCommandHandler):
     def __init__(self, *args, **kwargs):
         super(CorpHandler, self).__init__(*args, **kwargs)
 
+        engine = create_engine('sqlite:///%s' % config['database']['path'])
+        Base.metadata.create_all(engine)
+        self.session = sessionmaker(bind=engine)()
+
         # To allow certain handlers to wait until after the handshake
         self.WELCOMED = False
 
@@ -88,30 +94,6 @@ class CorpHandler(DefaultCommandHandler):
 
         # Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
         self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
-
-        # Periodic tasks
-        # self.periodic_callbacks = {
-        # }
-        # self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
-        # self.periodic_thread.daemon = True
-        # self.periodic_thread.start()
-
-    def _periodic_callback(self):
-        """Run registered callbacks every so often (~1 Hz)"""
-
-        db = sqlite3.connect(config['database']['path'])
-        while True:
-            start = time.time()
-            for cb in self.periodic_callbacks.keys():
-                try:
-                    self.periodic_callbacks[cb](db)
-                except:
-                    logging.error("Error while processing periodic callback '%s'." % cb, exc_info=True)
-            duration = time.time() - start
-
-            # Run no more often than once a second
-            if duration < 1.0:
-                time.sleep(1.0 - duration)
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -222,52 +204,40 @@ class CorpHandler(DefaultCommandHandler):
             logging.info("[unknown] %s -> %s" % (nick, msg))
             self._msg(chan, "Sorry, I don't understand that")
 
-    # DATABASE
-    def _get_person(self, nick):
-        """return (create if needed) a person from the database."""
+    def _add_key(self, person, key_id, vcode):
+        try:
+            api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
+            account = evelink.account.Account(api=api)
+            result = account.key_info()
+        except evelink.api.APIError as e:
+            logging.warn("Error loading api key(%d, %s): %s" % (key_id, vcode, e))
+            return None
 
-        c = db.cursor()
-        result = c.execute("SELECT id FROM people WHERE nick=?", (nick,)).fetchone()
         if result:
-            pid = result[0]
-        else:
-            c.execute("INSERT INTO people (nick) VALUES (?)", (nick,))
-            db.commit()
-            pid = c.lastrowid
-
-        return pid
-
-    def _update_key(self, person, key_id, vcode, details):
-        """Stores a key and the characters provided by it."""
-
-        output = []
-        c = db.cursor()
-        result = c.execute("SELECT id FROM apikeys WHERE keyid=?", (key_id,)).fetchone()
-        if not result:
-            output.append("Saving new key...")
-            c.execute("INSERT INTO apikeys "
-                      "(keyid, vcode, person, accessMask, type, expires) "
-                      "VALUES (?, ?, ?, ?, ?, ?)", (key_id, vcode, person,
-                       details['access_mask'], details['type'], details['expire_ts']))
-            db.commit()
-            kid = c.lastrowid
-        else:
-            kid = result[0]
-
-        for cid, char in details['characters'].iteritems():
-            result = c.execute("SELECT id FROM characters WHERE characterId = ?", (cid,)).fetchone()
-            if result:
-                c.execute("UPDATE characters SET corporationId=?, corporationName=? "
-                          "WHERE id=?", (char['corp']['id'], char['corp']['name'], result[0]))
+            if result['expire_ts']:
+                expire = self._ts(result['expire_ts'])
             else:
-                output.append("Adding new character: %s" % char['name'])
-                c.execute("INSERT INTO characters "
-                          "(characterId, name, corporationId, corporationName, apiKeyId) "
-                          "VALUES (?, ?, ?, ?, ?)",
-                           (cid, char['name'], char['corp']['id'], char['corp']['name'], kid))
-            db.commit()
+                expire = 'Never'
 
-        return output
+            logging.info("expires: %s, type: %s, charscters: %s" % (
+                         expire, result['type'],
+                         ", ".join(char['name'] for char in result['characters'].itervalues())))
+        else:
+            logging.warn("Invalid key")
+            return None
+
+        key = ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
+        person.keys += [key]
+
+        for char in result['characters'].itervalues():
+            key.characters += [
+              Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
+            ]
+
+        self.session.add(key)
+        self.session.commit()
+
+        return key
 
 
     # COMMANDS
@@ -295,31 +265,17 @@ class CorpHandler(DefaultCommandHandler):
         if not vcode:
             return usage()
 
+        (nick, mask) = nick.split("!", 1)
+
+        person = self.session.query(Person).filter(Person.nick==nick).first()
+        if person is None:
+            person = Person(nick, mask)
+
+        self.session.add(person)
+        self.session.commit()
+
         self._msg(chan, "Loading key...")
-        try:
-            api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
-            account = evelink.account.Account(api=api)
-            result = account.key_info()
-        except evelink.api.APIError as e:
-            self._msg(chan, "Error: %s" %e)
-            return
-
-        if result:
-            if result['expire_ts']:
-                expire = self._ts(result['expire_ts'])
-            else:
-                expire = 'Never'
-
-            self._msg(chan, "expires: %s, type: %s, charscters: %s" % (
-                        expire, result['type'],
-                        ", ".join(char['name'] for char in result['characters'].itervalues())))
-        else:
-            self._msg(chan, "invalid key.")
-            return
-
-        person = self._get_person(nick=nick)
-        for line in self._update_key(person=person, key_id=key_id, vcode=vcode, details=result):
-            self._msg(chan, line)
+        self._add_key(person, key_id, vcode)
 
 
     @admin_only
@@ -349,54 +305,68 @@ class CorpHandler(DefaultCommandHandler):
         """utc - Responds with the current time, UTC."""
         self._msg(chan, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' '))
 
+class Person(Base):
+    __tablename__ = 'people'
 
-def db_keyval(key, val=None, default=None, conn=None):
-    """Fetch a value from our 'misc' table key-val store."""
-    if conn is None:
-        conn = db
-    if val is not None:
-        conn.execute("INSERT OR REPLACE INTO misc (keyword, content) VALUES (?,?)", (key, val))
-        conn.commit()
-    else:
-        result = conn.execute("SELECT content FROM misc WHERE keyword = ?", (key,)).fetchone()
-        conn.rollback()
-        if result is None:
-            return default
-        else:
-            return result[0]
+    id = Column(Integer, primary_key=True)
+    nick = Column(String, nullable=False)
+    hostmask = Column(String, nullable=False)
+
+    keys = relationship("ApiKey", backref="person")
+
+    def __init__(self, nick, hostmask):
+        self.nick = nick
+        self.hostmask = hostmask
+
+    def __repr__(self):
+        return "<Person('%s')>" % self.nick
+
+class ApiKey(Base):
+    __tablename__ = 'apikeys'
+
+    id = Column(Integer, primary_key=True)
+    keyid = Column(Integer, nullable=False)
+    vcode = Column(String, nullable=False)
+    accessmask = Column(Integer, nullable=False)
+    type = Column(String, nullable=False)
+    expires = Column(Integer, nullable=False)
+    personid = Column(Integer, ForeignKey('people.id'))
+
+    characters = relationship("Character", backref="api")
+
+    def __init__(self, key_id, vcode, access_mask, type, expires):
+        self.keyid = key_id
+        self.vcode = vcode
+        self.accessmask = access_mask
+        self.type = type
+        self.expires = expires
+
+    def __repr__(self):
+        return "<Api('%s')>" % self.keyid
+
+class Character(Base):
+    __tablename__ = 'characters'
+
+    id = Column(Integer, primary_key=True)
+    charid = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    corpid = Column(Integer, nullable=False)
+    corpname = Column(String, nullable=False)
+    apiid = Column(Integer, ForeignKey('apikeys.id'), nullable=False)
+
+    def __init__(self, char_id, name, corp_id, corp_name):
+        self.charid = char_id
+        self.name = name
+        self.corpid = corp_id
+        self.corpname = corp_name
+
+    def __repr__(self):
+        return "<Char('%s')>" % self.name
 
 if __name__ == '__main__':
 
     with open('config.yaml') as f:
         config = yaml.safe_load(f)
-
-    db = sqlite3.connect(config['database']['path'])
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS apikeys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            keyid INTEGER,
-            vcode TEXT,
-            personId INTEGER,
-            accessMask INTEGER,
-            type TEXT,
-            expires INTEGER
-        )""")
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS people (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nick TEXT,
-            hostmask TEXT
-        )""")
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS characters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            characterId INTEGER,
-            name TEXT,
-            corporationId INTEGER,
-            corporationName TEXT,
-            apiKeyId INTEGER
-        )""")
-    db.commit()
 
     app = IRCApp()
     clients = {}
