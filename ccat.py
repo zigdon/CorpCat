@@ -217,7 +217,7 @@ class CorpHandler(DefaultCommandHandler):
     def _identify(self, nick, callback=None):
         if nick in self.identified:
             if callback is not None:
-                callback(nick)
+                callback()
             return True
 
         self._msg(config['servers'][self.client.host]['auth']['to'],
