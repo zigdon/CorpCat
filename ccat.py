@@ -1,30 +1,21 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4:
-# import base64
 from collections import defaultdict
 import datetime
 import functools
-# import json
 import logging
-# import random
 import re
 from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-# import threading
-# from urllib import urlencode, quote_plus
-# import urllib2
-# from urlparse import urlparse
 
 import evelink
 import evelink.cache.shelf
 
-# from BeautifulSoup import BeautifulSoup as soup
 from oyoyo.client import IRCApp, IRCClient
 from oyoyo.cmdhandler import DefaultCommandHandler
 from oyoyo import helpers, ircevents
-# import pytz
 import yaml
 
 ircevents.numeric_events["335"] = 'whoisbot'
@@ -230,9 +221,10 @@ class CorpHandler(DefaultCommandHandler):
         person.keys += [key]
 
         for char in result['characters'].itervalues():
-            key.characters += [
-              Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
-            ]
+            if not self.session.query(Character).filter(Character.charid==char['id']).first():
+                key.characters += [
+                  Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
+                ]
 
         self.session.add(key)
         self.session.commit()
@@ -296,7 +288,7 @@ class CorpHandler(DefaultCommandHandler):
                 self._msg(chan, "%s (%s) is owned by %s." %
                   (char.name, char.corpname, char.api.person.nick))
             else:
-                self._msg(chan, "%d matches: %s" % (len(chars), ", ".join(chars)))
+                self._msg(chan, "%d matches: %s" % (len(chars), ", ".join(c.name for c in chars)))
 
             return;
 
@@ -349,8 +341,7 @@ class Person(Base):
 class ApiKey(Base):
     __tablename__ = 'apikeys'
 
-    id = Column(Integer, primary_key=True)
-    keyid = Column(Integer, nullable=False)
+    keyid = Column(Integer, primary_key=True)
     vcode = Column(String, nullable=False)
     accessmask = Column(Integer, nullable=False)
     type = Column(String, nullable=False)
@@ -372,12 +363,11 @@ class ApiKey(Base):
 class Character(Base):
     __tablename__ = 'characters'
 
-    id = Column(Integer, primary_key=True)
-    charid = Column(String, nullable=False)
+    charid = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     corpid = Column(Integer, nullable=False)
     corpname = Column(String, nullable=False)
-    apiid = Column(Integer, ForeignKey('apikeys.id'), nullable=False)
+    apiid = Column(Integer, ForeignKey('apikeys.keyid'), nullable=False)
 
     def __init__(self, char_id, name, corp_id, corp_name):
         self.charid = char_id
