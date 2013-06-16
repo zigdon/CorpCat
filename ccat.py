@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4:
-from collections import defaultdict
+from collections import defaultdict, deque
 import datetime
 import functools
 import logging
@@ -85,7 +85,7 @@ class CorpHandler(DefaultCommandHandler):
 
         self.callbacks = defaultdict(None)
         self.identified = defaultdict(None)
-        self.to_identify = set()
+        self.to_identify = deque()
 
         self.periodic_callbacks = {
             'identifier': self._process_identify_queue,
@@ -113,7 +113,7 @@ class CorpHandler(DefaultCommandHandler):
 
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
-            nick, chan = self.to_identify.pop()
+            nick, chan = self.to_identify.popleft()
             self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
 
     def nick(self, nick, newnick):
@@ -138,7 +138,7 @@ class CorpHandler(DefaultCommandHandler):
     def namreply(self, nick, chan, equals, channel, nicklist):
         nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
         logging.info("[namreply] %s -> %r" % (channel, nicks))
-        self.to_identify |= set((nick, channel) for nick in nicks)
+        self.to_identify.extend((nick, channel) for nick in nicks)
 
 
     def part(self, nick, chan):
