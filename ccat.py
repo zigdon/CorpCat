@@ -6,14 +6,8 @@ import datetime
 import functools
 import logging
 import re
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
-from sqlalchemy.orm import relationship, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 import sys
 from inspect import getmembers, getdoc, ismethod
-
-import evelink
-import evelink.cache.shelf
 
 from oyoyo.client import IRCApp, IRCClient
 from oyoyo.cmdhandler import DefaultCommandHandler
@@ -23,6 +17,8 @@ import yaml
 import time
 import threading
 
+from vnaccess import VNAccess
+
 ircevents.numeric_events["335"] = 'whoisbot'
 ircevents.all_events.append('whoisbot')
 ircevents.numeric_events["307"] = 'whoisregistered'
@@ -31,8 +27,6 @@ ircevents.all_events.append('whoisregistered')
 logging.basicConfig(level=logging.INFO)
 app = None
 config = None
-db = None
-Base = declarative_base()
 
 def admin_only(f):
     @functools.wraps(f)
@@ -72,9 +66,7 @@ class CorpHandler(DefaultCommandHandler):
     def __init__(self, *args, **kwargs):
         super(CorpHandler, self).__init__(*args, **kwargs)
 
-        engine = create_engine('sqlite:///%s' % config['database']['path'])
-        Base.metadata.create_all(engine)
-        self.session = sessionmaker(bind=engine)()
+        self.corp = VNAccess(config)
 
         # To allow certain handlers to wait until after the handshake
         self.WELCOMED = False
@@ -121,8 +113,8 @@ class CorpHandler(DefaultCommandHandler):
 
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
-            nick = self.to_identify.pop()
-            self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+            nick, chan = self.to_identify.pop()
+            self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -141,26 +133,17 @@ class CorpHandler(DefaultCommandHandler):
             logging.info("[joined] %s" % chan)
         else:
             logging.info("[join] %s -> %s" % (nick, chan))
-            self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+            self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
 
     def namreply(self, nick, chan, equals, channel, nicklist):
         nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
         logging.info("[namreply] %s -> %r" % (channel, nicks))
-        self.to_identify = nicks | self.to_identify
+        self.to_identify |= set((nick, channel) for nick in nicks)
 
 
     def part(self, nick, chan):
         logging.info("[part] %s -> %s" % (nick, chan))
         del(self.identified[nick.lower()])
-
-    def corpvoice(self, chan, nick):
-        person = self.session.query(Person).filter(Person.nick==nick).first()
-        if person is None:
-            return
-
-        corps = set(c.corpname for key in person.keys for c in key.characters)
-        if config['corp']['name'] in corps:
-            self._voice(chan, nick)
 
     def welcome(self, nick, chan, msg):
         """Trigger on-login actions via the WELCOME event."""
@@ -287,48 +270,6 @@ class CorpHandler(DefaultCommandHandler):
             logging.info("[unknown] %s -> %s" % (nick, msg))
             self._msg(chan, "Sorry, I don't understand that")
 
-    def _add_key(self, person, key_id, vcode):
-        try:
-            api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
-            account = evelink.account.Account(api=api)
-            result = account.key_info()
-        except evelink.api.APIError as e:
-            logging.warn("Error loading api key(%d, %s): %s" % (key_id, vcode, e))
-            return None
-
-        if result:
-            if result['expire_ts']:
-                expire = self._ts(result['expire_ts'])
-            else:
-                expire = 'Never'
-
-            logging.info("expires: %s, type: %s, charscters: %s" % (
-                         expire, result['type'],
-                         ", ".join(char['name'] for char in result['characters'].itervalues())))
-        else:
-            logging.warn("Invalid key")
-            return None
-
-        try:
-            key = ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
-            person.keys += [key]
-            self.session.add(key)
-            self.session.commit()
-
-            for char in result['characters'].itervalues():
-                if not self.session.query(Character).filter(Character.charid==char['id']).first():
-                    key.characters += [
-                      Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
-                    ]
-
-            self.session.add(key)
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-
-        return key
-
-
     # COMMANDS
     @admin_only
     def _cmd_JOIN(self, nick, mask, chan, arg):
@@ -356,16 +297,10 @@ class CorpHandler(DefaultCommandHandler):
 
         (nick, mask) = nick.split("!", 1)
 
-        person = self.session.query(Person).filter(Person.nick==nick).first()
-        if person is None:
-            person = Person(nick, mask)
-
-        self.session.add(person)
-        self.session.commit()
-
+        person = self.corp.get_person(nick, mask)
         self._msg(chan, "Loading key...")
-        self._add_key(person, key_id, vcode)
-        self._identify(nick, lambda: self.corpvoice(config['corp']['channel'], nick))
+        self.corp.add_key(person, key_id, vcode)
+        self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
 
 
     def _cmd_HELP(self, nick, mask, chan, args):
@@ -382,16 +317,13 @@ class CorpHandler(DefaultCommandHandler):
     def _cmd_WHOIS(self, nick, mask, chan, args):
         """whois <nick|character> - Look up details of a person or character."""
 
-        person = self.session.query(Person).filter(Person.nick==args).first()
+        person, chars = self.corp.search(args)
         if person is not None:
-            chars = set(c for key in person.keys for c in key.characters)
             self._msg(chan, "%s: %s has %d api key(s) and %d character(s): %s"
                       % (nick, person.nick, len(person.keys), len(chars),
                          ", ".join("%s (%s)" % (c.name, c.corpname) for c in chars)))
-
             return
 
-        chars = self.session.query(Character).filter(Character.name.like("%%%s%%" % args)).all()
         if chars is not None:
             if len(chars) == 1:
                 char = chars[0]
@@ -400,10 +332,9 @@ class CorpHandler(DefaultCommandHandler):
             else:
                 self._msg(chan, "%s: %d matches: %s" % (nick, len(chars), ", ".join(c.name for c in chars)))
 
-            return;
+            return
 
         self._msg(chan, "%s: Couldn't find %s." % (nick, args))
-
 
     @admin_only
     def _cmd_PART(self, nick, mask, chan, arg):
@@ -434,62 +365,6 @@ class CorpHandler(DefaultCommandHandler):
         """utc - Responds with the current time, UTC."""
         self._msg(chan, "%s: %s" % (nick, datetime.datetime.utcnow().replace(microsecond=0).isoformat(' ')))
 
-class Person(Base):
-    __tablename__ = 'people'
-
-    id = Column(Integer, primary_key=True)
-    nick = Column(String, nullable=False)
-    hostmask = Column(String, nullable=False)
-
-    keys = relationship("ApiKey", backref="person")
-
-    def __init__(self, nick, hostmask):
-        self.nick = nick
-        self.hostmask = hostmask
-
-    def __repr__(self):
-        return "<Person('%s')>" % self.nick
-
-class ApiKey(Base):
-    __tablename__ = 'apikeys'
-
-    keyid = Column(Integer, primary_key=True)
-    vcode = Column(String, nullable=False)
-    accessmask = Column(Integer, nullable=False)
-    type = Column(String, nullable=False)
-    expires = Column(Integer, nullable=False)
-    personid = Column(Integer, ForeignKey('people.id'))
-
-    characters = relationship("Character", backref="api")
-
-    def __init__(self, key_id, vcode, access_mask, type, expires):
-        self.keyid = key_id
-        self.vcode = vcode
-        self.accessmask = access_mask
-        self.type = type
-        self.expires = expires
-
-    def __repr__(self):
-        return "<Api('%s')>" % self.keyid
-
-class Character(Base):
-    __tablename__ = 'characters'
-
-    charid = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    corpid = Column(Integer, nullable=False)
-    corpname = Column(String, nullable=False)
-    apiid = Column(Integer, ForeignKey('apikeys.keyid'), nullable=False)
-
-    def __init__(self, char_id, name, corp_id, corp_name):
-        self.charid = char_id
-        self.name = name
-        self.corpid = corp_id
-        self.corpname = corp_name
-
-    def __repr__(self):
-        return "<Char('%s')>" % self.name
-
 if __name__ == '__main__':
 
     if len(sys.argv) > 1:
@@ -502,7 +377,6 @@ if __name__ == '__main__':
 
     app = IRCApp()
     clients = {}
-    cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
     for server, conf in config['servers'].iteritems():
         client = IRCClient(
