@@ -17,7 +17,7 @@ import yaml
 import time
 import threading
 
-from vnaccess import VNAccess
+from corpaccess import CorpAccess
 
 ircevents.numeric_events["335"] = 'whoisbot'
 ircevents.all_events.append('whoisbot')
@@ -66,7 +66,7 @@ class CorpHandler(DefaultCommandHandler):
     def __init__(self, *args, **kwargs):
         super(CorpHandler, self).__init__(*args, **kwargs)
 
-        self.corp = VNAccess(config)
+        self.corps = dict()
 
         # To allow certain handlers to wait until after the handshake
         self.WELCOMED = False
@@ -83,7 +83,6 @@ class CorpHandler(DefaultCommandHandler):
         # Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
         self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
 
-        self.callbacks = defaultdict(None)
         self.identified = defaultdict(None)
         self.to_identify = deque()
 
@@ -114,7 +113,7 @@ class CorpHandler(DefaultCommandHandler):
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
             nick, chan = self.to_identify.popleft()
-            self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
+            self._identify(nick)
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -133,7 +132,7 @@ class CorpHandler(DefaultCommandHandler):
             logging.info("[joined] %s" % chan)
         else:
             logging.info("[join] %s -> %s" % (nick, chan))
-            self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
+            self._identify(nick)
 
     def namreply(self, nick, chan, equals, channel, nicklist):
         nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
@@ -143,7 +142,10 @@ class CorpHandler(DefaultCommandHandler):
 
     def part(self, nick, chan):
         logging.info("[part] %s -> %s" % (nick, chan))
-        del(self.identified[nick.lower()])
+        try:
+            del(self.identified[nick.lower()])
+        except KeyError:
+            pass
 
     def welcome(self, nick, chan, msg):
         """Trigger on-login actions via the WELCOME event."""
@@ -159,9 +161,10 @@ class CorpHandler(DefaultCommandHandler):
                     self.client.host)
 
         # If default channels to join are specified, join them.
-        channels = s.get('channels', ())
-        for channel in channels:
-            helpers.join(self.client, channel)
+        corps = s.get('corps', dict())
+        for name, conf in corps.iteritems():
+            self.corps[name] = CorpAccess(config, conf)
+            helpers.join(self.client, conf['channel'])
 
         # If server-specific user modes are specified, set them.
         modes = s.get('modes')
@@ -195,18 +198,23 @@ class CorpHandler(DefaultCommandHandler):
     def _voice(self, chan, nick):
         self.client.send("MODE", chan, '+v', nick)
 
-    def _identify(self, nick, callback=None):
+    def _identify(self, nick):
         if nick in self.identified:
-            if callback is not None:
-                callback()
+            self._enforce(nick)
             return True
 
         self._msg(config['servers'][self.client.host]['auth']['to'],
                   'acc %s *' % nick)
-        if callback is not None:
-            self.callbacks[nick.lower()] = callback
 
         return False
+
+    def _enforce(self, nick):
+        logging.info('Enforcing %s (identify=%d)' % (nick, self.identified[nick]))
+        for corp in self.corps.itervalues():
+            if corp.action == 'voice' and self.identified[nick] and corp.is_allowed(nick):
+                    self._voice(corp.channel, nick)
+            elif corp.action == 'kick' and not (self.identified[nick] and corp.is_allowed(nick)):
+                self._kick(corp.channel, nick, 'Failed to identify.')
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
@@ -228,9 +236,7 @@ class CorpHandler(DefaultCommandHandler):
                 user = m.group(1).lower()
                 if m.group(2) == "3":
                     self.identified[user] = 1
-                    if user in self.callbacks:
-                        self.callbacks[user]()
-                        del(self.callbacks[user])
+                    self._enforce(user)
                 else:
                     del(self.identified[user])
 
@@ -294,14 +300,14 @@ class CorpHandler(DefaultCommandHandler):
         person = self.corp.get_person(nick, mask)
         self._msg(chan, "Loading key...")
         self.corp.add_key(person, key_id, vcode)
-        self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
+        self._identify(nick)
         self._msg(chan, "Key loaded.")
 
     def _cmd_ID(self, nick, mask, chan, args):
         """identify [<nick>] - check again if nick is known."""
 
         target = args if args else nick
-        self._identify(target, lambda: self._voice(chan, target) if self.corp.isvn(target) else None)
+        self._identify(target)
 
     def _cmd_HELP(self, nick, mask, chan, args):
         """Show all known commands. help <cmd> for more details."""

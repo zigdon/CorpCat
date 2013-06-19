@@ -4,16 +4,24 @@ servers:
     port: 6667
     nick: CorpCat
     name: "Maintained by you"
-    channels:
-      - '#mychan'
+    corps:
+      corp1:
+        channel: '##corp1'
+        action: 'voice'
+        allowed:
+          - 'My Corp'
+      alliance1:
+        channel: '##alliance1'
+        action: 'kick'
+        allowed:
+          - 'Member Corp 1'
+          - 'Member Corp 2'
+          - 'Member Corp 3'
     auth:
       to: NickServ
       msg: 'identify sekrit'
 
 sigil: '!'
-
-limits:
-  replay: 20
 
 database:
   path: 'corpcat.sqlite3'

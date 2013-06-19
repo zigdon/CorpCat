@@ -15,25 +15,29 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
-class VNAccess(object):
-    def __init__(self, config):
+class CorpAccess(object):
+    def __init__(self, config, corp):
 
         engine = create_engine('sqlite:///%s' % config['database']['path'])
         Base.metadata.create_all(engine)
         self.session = sessionmaker(bind=engine)()
+
         self.config = config
+        self.corp = corp
+        self.action = self.corp.get('action', 'voice')
+        self.channel = self.corp.get('channel', None)
 
     def _ts(self, timestamp):
         date = datetime.date.fromtimestamp(int(timestamp))
         return "%04d-%02d-%02d" % (date.year, date.month, date.day)
 
-    def isvn(self, nick):
+    def is_allowed(self, nick):
         person = self.session.query(Person).filter(Person.nick==nick).first()
         if person is None:
             return
 
         corps = set(c.corpname for key in person.keys for c in key.characters)
-        return self.config['corp']['name'] in corps
+        return corps.intersection(self.corp['allowed'])
 
     def get_person(self, nick, mask):
         person = self.session.query(Person).filter(Person.nick==nick).first()
