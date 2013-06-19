@@ -214,7 +214,7 @@ class CorpHandler(DefaultCommandHandler):
             if corp.action == 'voice' and self.identified[nick] and corp.is_allowed(nick):
                     self._voice(corp.channel, nick)
             elif corp.action == 'kick' and not (self.identified[nick] and corp.is_allowed(nick)):
-                self._kick(corp.channel, nick, 'Failed to identify.')
+                self._kick(corp.channel, nick, 'This channel is restricted. /msg me "help id" for details.')
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
@@ -304,7 +304,7 @@ class CorpHandler(DefaultCommandHandler):
         self._msg(chan, "Key loaded.")
 
     def _cmd_ID(self, nick, mask, chan, args):
-        """identify [<nick>] - check again if nick is known."""
+        """identify [<nick>] - check again if nick is known. A nick is considered known if it has an an api key added (help addkey) and is identified with NickServ."""
 
         target = args if args else nick
         self._identify(target)
@@ -323,22 +323,23 @@ class CorpHandler(DefaultCommandHandler):
     def _cmd_WHOIS(self, nick, mask, chan, args):
         """whois <nick|character> - Look up details of a person or character."""
 
-        person, chars = self.corp.search(args)
-        if person is not None:
-            self._msg(chan, "%s: %s has %d api key(s) and %d character(s): %s"
-                      % (nick, person.nick, len(person.keys), len(chars),
-                         ", ".join("%s (%s)" % (c.name, c.corpname) for c in chars)))
-            return
+        for corp in self.corps.itervalues():
+            person, chars = corp.search(args)
+            if person is not None:
+                self._msg(chan, "%s: %s has %d api key(s) and %d character(s): %s"
+                          % (nick, person.nick, len(person.keys), len(chars),
+                             ", ".join("%s (%s)" % (c.name, c.corpname) for c in chars)))
+                return
 
-        if chars is not None:
-            if len(chars) == 1:
-                char = chars[0]
-                self._msg(chan, "%s: %s (%s) is owned by %s." %
-                  (nick, char.name, char.corpname, char.api.person.nick))
-            else:
-                self._msg(chan, "%s: %d matches: %s" % (nick, len(chars), ", ".join(c.name for c in chars)))
+            if chars is not None:
+                if len(chars) == 1:
+                    char = chars[0]
+                    self._msg(chan, "%s: %s (%s) is owned by %s." %
+                      (nick, char.name, char.corpname, char.api.person.nick))
+                else:
+                    self._msg(chan, "%s: %d matches: %s" % (nick, len(chars), ", ".join(c.name for c in chars)))
 
-            return
+                return
 
         self._msg(chan, "%s: Couldn't find %s." % (nick, args))
 
