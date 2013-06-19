@@ -8,41 +8,30 @@ import logging
 import evelink
 import evelink.cache.shelf
 
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
-from sqlalchemy.orm import relationship, sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
 cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
 class CorpAccess(object):
-    def __init__(self, config, corp):
-
-        engine = create_engine('sqlite:///%s' % config['database']['path'])
-        Base.metadata.create_all(engine)
-        self.session = sessionmaker(bind=engine)()
-
+    def __init__(self, config, schema):
+        self.schema = schema
+        self.session = schema.session
         self.config = config
-        self.corp = corp
-        self.action = self.corp.get('action', 'voice')
-        self.channel = self.corp.get('channel', None)
 
     def _ts(self, timestamp):
         date = datetime.date.fromtimestamp(int(timestamp))
         return "%04d-%02d-%02d" % (date.year, date.month, date.day)
 
-    def is_allowed(self, nick):
-        person = self.session.query(Person).filter(Person.nick==nick).first()
+    def is_allowed(self, tag, nick):
+        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==nick).first()
         if person is None:
             return
 
         corps = set(c.corpname for key in person.keys for c in key.characters)
-        return corps.intersection(self.corp['allowed'])
+        return corps.intersection(self.config['corps'][tag]['allowed'])
 
     def get_person(self, nick, mask):
-        person = self.session.query(Person).filter(Person.nick==nick).first()
+        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==nick).first()
         if person is None:
-            person = Person(nick, mask)
+            person = self.schema.Person(nick, mask)
 
         self.session.add(person)
         self.session.commit()
@@ -50,9 +39,9 @@ class CorpAccess(object):
         return person
 
     def search(self, args):
-        person = self.session.query(Person).filter(Person.nick==args).first()
+        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==args).first()
         if person is None:
-            chars = self.session.query(Character).filter(Character.name.like("%%%s%%" % args)).all()
+            chars = self.session.query(self.schema.Character).filter(self.schema.Character.name.like("%%%s%%" % args)).all()
         else:
             chars = set(c for key in person.keys for c in key.characters)
 
@@ -81,15 +70,15 @@ class CorpAccess(object):
             return None
 
         try:
-            key = ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
+            key = self.schema.ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
             person.keys += [key]
             self.session.add(key)
             self.session.commit()
 
             for char in result['characters'].itervalues():
-                if not self.session.query(Character).filter(Character.charid==char['id']).first():
+                if not self.session.query(self.schema.Character).filter(self.schema.Character.charid==char['id']).first():
                     key.characters += [
-                      Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
+                      self.schema.Character(char['id'], char['name'], char['corp']['id'], char['corp']['name'])
                     ]
 
             self.session.add(key)
@@ -100,60 +89,4 @@ class CorpAccess(object):
         return key
 
 
-
-class Person(Base):
-    __tablename__ = 'people'
-
-    id = Column(Integer, primary_key=True)
-    nick = Column(String, nullable=False)
-    hostmask = Column(String, nullable=False)
-
-    keys = relationship("ApiKey", backref="person")
-
-    def __init__(self, nick, hostmask):
-        self.nick = nick
-        self.hostmask = hostmask
-
-    def __repr__(self):
-        return "<Person('%s')>" % self.nick
-
-class ApiKey(Base):
-    __tablename__ = 'apikeys'
-
-    keyid = Column(Integer, primary_key=True)
-    vcode = Column(String, nullable=False)
-    accessmask = Column(Integer, nullable=False)
-    type = Column(String, nullable=False)
-    expires = Column(Integer, nullable=False)
-    personid = Column(Integer, ForeignKey('people.id'))
-
-    characters = relationship("Character", backref="api")
-
-    def __init__(self, key_id, vcode, access_mask, type, expires):
-        self.keyid = key_id
-        self.vcode = vcode
-        self.accessmask = access_mask
-        self.type = type
-        self.expires = expires
-
-    def __repr__(self):
-        return "<Api('%s')>" % self.keyid
-
-class Character(Base):
-    __tablename__ = 'characters'
-
-    charid = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    corpid = Column(Integer, nullable=False)
-    corpname = Column(String, nullable=False)
-    apiid = Column(Integer, ForeignKey('apikeys.keyid'), nullable=False)
-
-    def __init__(self, char_id, name, corp_id, corp_name):
-        self.charid = char_id
-        self.name = name
-        self.corpid = corp_id
-        self.corpname = corp_name
-
-    def __repr__(self):
-        return "<Char('%s')>" % self.name
 

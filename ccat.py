@@ -18,6 +18,7 @@ import time
 import threading
 
 from corpaccess import CorpAccess
+from corpschema import CorpSchema
 
 ircevents.numeric_events["335"] = 'whoisbot'
 ircevents.all_events.append('whoisbot')
@@ -27,6 +28,8 @@ ircevents.all_events.append('whoisregistered')
 logging.basicConfig(level=logging.INFO)
 app = None
 config = None
+schema = None
+access = None
 
 def admin_only(f):
     @functools.wraps(f)
@@ -65,8 +68,7 @@ class CorpHandler(DefaultCommandHandler):
 
     def __init__(self, *args, **kwargs):
         super(CorpHandler, self).__init__(*args, **kwargs)
-
-        self.corps = dict()
+        self.corps = config['corps']
 
         # To allow certain handlers to wait until after the handshake
         self.WELCOMED = False
@@ -160,16 +162,14 @@ class CorpHandler(DefaultCommandHandler):
                 logging.error('Authentication info for %s missing "to" or "msg", skipping.' %
                     self.client.host)
 
-        # If default channels to join are specified, join them.
-        corps = s.get('corps', dict())
-        for name, conf in corps.iteritems():
-            self.corps[name] = CorpAccess(config, conf)
-            helpers.join(self.client, conf['channel'])
-
         # If server-specific user modes are specified, set them.
         modes = s.get('modes')
         if modes:
             self.client.send('MODE', s['nick'], modes)
+
+        for corp in self.corps.itervalues():
+            if corp['server'] == self.client.host:
+                helpers.join(self.client, corp['channel'])
 
         logging.info("Completed initial connection actions for %s." % self.client.host)
         self.WELCOMED = True
@@ -210,11 +210,11 @@ class CorpHandler(DefaultCommandHandler):
 
     def _enforce(self, nick):
         logging.info('Enforcing %s (identify=%d)' % (nick, self.identified[nick]))
-        for corp in self.corps.itervalues():
-            if corp.action == 'voice' and self.identified[nick] and corp.is_allowed(nick):
-                    self._voice(corp.channel, nick)
-            elif corp.action == 'kick' and not (self.identified[nick] and corp.is_allowed(nick)):
-                self._kick(corp.channel, nick, 'This channel is restricted. /msg me "help id" for details.')
+        for tag, corp in self.corps.iteritems():
+            if corp['action'] == 'voice' and self.identified[nick] and access.is_allowed(tag, nick):
+                    self._voice(corp['channel'], nick)
+            elif corp['action'] == 'kick' and not (self.identified[nick] and access.is_allowed(tag, nick)):
+                self._kick(corp['channel'], nick, 'This channel is restricted. /msg me "help id" for details.')
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
@@ -324,7 +324,7 @@ class CorpHandler(DefaultCommandHandler):
         """whois <nick|character> - Look up details of a person or character."""
 
         for corp in self.corps.itervalues():
-            person, chars = corp.search(args)
+            person, chars = access.search(args)
             if person is not None:
                 self._msg(chan, "%s: %s has %d api key(s) and %d character(s): %s"
                           % (nick, person.nick, len(person.keys), len(chars),
@@ -383,6 +383,8 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
 
     app = IRCApp()
+    schema = CorpSchema(config)
+    access = CorpAccess(config, schema)
     clients = {}
 
     for server, conf in config['servers'].iteritems():
