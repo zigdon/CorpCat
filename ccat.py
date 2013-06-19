@@ -297,6 +297,11 @@ class CorpHandler(DefaultCommandHandler):
         self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
         self._msg(chan, "Key loaded.")
 
+    def _cmd_ID(self, nick, mask, chan, args):
+        """identify [<nick>] - check again if nick is known."""
+
+        target = args if args else nick
+        self._identify(target, lambda: self._voice(chan, target) if self.corp.isvn(target) else None)
 
     def _cmd_HELP(self, nick, mask, chan, args):
         """Show all known commands. help <cmd> for more details."""
