@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4:
 
+import datetime
 import logging
 
 import evelink
@@ -21,6 +22,10 @@ class VNAccess(object):
         Base.metadata.create_all(engine)
         self.session = sessionmaker(bind=engine)()
         self.config = config
+
+    def _ts(self, timestamp):
+        date = datetime.date.fromtimestamp(int(timestamp))
+        return "%04d-%02d-%02d" % (date.year, date.month, date.day)
 
     def isvn(self, nick):
         person = self.session.query(Person).filter(Person.nick==nick).first()

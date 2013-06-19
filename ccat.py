@@ -195,10 +195,6 @@ class CorpHandler(DefaultCommandHandler):
     def _voice(self, chan, nick):
         self.client.send("MODE", chan, '+v', nick)
 
-    def _ts(self, timestamp):
-        date = datetime.date.fromtimestamp(int(timestamp))
-        return "%04d-%02d-%02d" % (date.year, date.month, date.day)
-
     def _identify(self, nick, callback=None):
         if nick in self.identified:
             if callback is not None:
@@ -299,6 +295,7 @@ class CorpHandler(DefaultCommandHandler):
         self._msg(chan, "Loading key...")
         self.corp.add_key(person, key_id, vcode)
         self._identify(nick, lambda: self._voice(chan, nick) if self.corp.isvn(nick) else None)
+        self._msg(chan, "Key loaded.")
 
 
     def _cmd_HELP(self, nick, mask, chan, args):
