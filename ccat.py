@@ -297,9 +297,9 @@ class CorpHandler(DefaultCommandHandler):
         if not vcode:
             return usage()
 
-        person = self.corp.get_person(nick, mask)
+        person = self.corps[0].get_person(nick, mask)
         self._msg(chan, "Loading key...")
-        self.corp.add_key(person, key_id, vcode)
+        self.corps[0].add_key(person, key_id, vcode)
         self._identify(nick)
         self._msg(chan, "Key loaded.")
 
