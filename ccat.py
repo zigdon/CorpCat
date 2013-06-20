@@ -167,6 +167,7 @@ class CorpHandler(DefaultCommandHandler):
         if modes:
             self.client.send('MODE', s['nick'], modes)
 
+        time.sleep(5)
         for corp in self.corps.itervalues():
             if corp['server'] == self.client.host:
                 helpers.join(self.client, corp['channel'])

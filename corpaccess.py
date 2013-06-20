@@ -59,7 +59,7 @@ class CorpAccess(object):
             account = evelink.account.Account(api=api)
             result = account.key_info()
         except evelink.api.APIError as e:
-            logging.warn("Error loading api key(%d, %s): %s" % (key_id, vcode, e))
+            logging.warn("Error loading api key(%s, %s): %s" % (key_id, vcode, e))
             return None
 
         if result:
