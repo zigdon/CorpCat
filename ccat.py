@@ -198,6 +198,9 @@ class CorpHandler(DefaultCommandHandler):
     def _voice(self, chan, nick):
         self.client.send("MODE", chan, '+v', nick)
 
+    def _auto_invite(self, chan, nick):
+        self.client.send("MODE", chan, '+I', nick)
+
     def _identify(self, nick):
         if nick in self.identified:
             self._enforce(nick)
@@ -216,6 +219,8 @@ class CorpHandler(DefaultCommandHandler):
                     self._voice(corp['channel'], nick)
             elif corp['action'] == 'kick' and not (self.identified[nick] and access.is_allowed(tag, nick)):
                 self._kick(corp['channel'], nick, 'This channel is restricted. /msg me "help id" for details.')
+            elif corp['action'] == 'invite' and self.identified[nick] and access.is_allowed(tag, nick):
+                self._auto_invite(corp['channel'], nick)
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
