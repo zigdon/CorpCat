@@ -211,6 +211,7 @@ class CorpHandler(DefaultCommandHandler):
     def _enforce(self, nick):
         logging.info('Enforcing %s (identify=%d)' % (nick, self.identified[nick]))
         for tag, corp in self.corps.iteritems():
+            logging.info('corp=%s, action=%s, channel=%s' % (tag, corp['action'], corp['channel']))
             if corp['action'] == 'voice' and self.identified[nick] and access.is_allowed(tag, nick):
                     self._voice(corp['channel'], nick)
             elif corp['action'] == 'kick' and not (self.identified[nick] and access.is_allowed(tag, nick)):
@@ -286,7 +287,7 @@ class CorpHandler(DefaultCommandHandler):
 
     @pm_only
     def _cmd_ADDKEY(self, nick, mask, chan, args):
-        """addkey <keyid> <vcode> - add an api key for a person (PM only)."""
+        """addkey <keyid> <vcode> - add an api key for a person (PM only). Create a key at http://api.eveonline.com"""
         usage = lambda: self._msg(chan, "Usage: add key <keyid> <vcode>.")
 
         if not args:
@@ -297,9 +298,9 @@ class CorpHandler(DefaultCommandHandler):
         if not vcode:
             return usage()
 
-        person = self.corps[0].get_person(nick, mask)
+        person = access.get_person(nick, mask)
         self._msg(chan, "Loading key...")
-        self.corps[0].add_key(person, key_id, vcode)
+        access.add_key(person, key_id, vcode)
         self._identify(nick)
         self._msg(chan, "Key loaded.")
 

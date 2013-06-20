@@ -8,6 +8,8 @@ import logging
 import evelink
 import evelink.cache.shelf
 
+from sqlalchemy import func
+
 cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
 class CorpAccess(object):
@@ -21,11 +23,15 @@ class CorpAccess(object):
         return "%04d-%02d-%02d" % (date.year, date.month, date.day)
 
     def is_allowed(self, tag, nick):
-        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==nick).first()
+        person = self.session.query(self.schema.Person).\
+                 filter(func.lower(self.schema.Person.nick)==nick.lower()).first()
         if person is None:
+            logging.info('no person object found for "%s".' % nick)
             return
 
         corps = set(c.corpname for key in person.keys for c in key.characters)
+        logging.info('corps[%s] = %s' % (nick, ", ".join(corps)))
+        logging.info('allowed[%s] = %s' % (tag, ", ".join(self.config['corps'][tag]['allowed'])))
         return corps.intersection(self.config['corps'][tag]['allowed'])
 
     def get_person(self, nick, mask):
