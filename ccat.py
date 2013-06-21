@@ -91,9 +91,9 @@ class CorpHandler(DefaultCommandHandler):
         self.to_voice = defaultdict(set)
 
         self.periodic_callbacks = {
-            'identifier': self._process_identify_queue,
-            'voicer': self._process_voice_queue,
-            'inviter': self._process_invite_queue,
+            'identifier': (1, self._process_identify_queue),
+            'voicer': (10, self._process_voice_queue),
+            'inviter': (10, self._process_invite_queue),
         }
 
         self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
@@ -103,11 +103,15 @@ class CorpHandler(DefaultCommandHandler):
     def _periodic_callback(self):
         """Run registered callbacks every so often (~1 Hz)"""
 
+        iteration = 0
         while True:
             start = time.time()
+            iteration += 1
             for cb in self.periodic_callbacks.keys():
                 try:
-                    self.periodic_callbacks[cb]()
+                    freq, callback = self.periodic_callbacks[cb]
+                    if iteration % freq == 0:
+                        callback()
                 except:
                     logging.error("Error while processing periodic callback '%s'." % cb, exc_info=True)
                 duration = time.time() - start
@@ -119,7 +123,6 @@ class CorpHandler(DefaultCommandHandler):
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
             for chan, nicks in self.to_identify.items():
-                logging.info('[id_queue] %s, %r' % (chan, nicks))
                 if len(nicks) == 0:
                     del(self.to_identify[chan])
                     break
