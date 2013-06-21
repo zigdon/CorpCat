@@ -87,13 +87,15 @@ class CorpHandler(DefaultCommandHandler):
 
         self.identified = defaultdict(None)
         self.to_identify = defaultdict(set)
+        self.identify_sent = set()
         self.to_invite = defaultdict(set)
         self.to_voice = defaultdict(set)
+        self.perms = defaultdict(lambda: defaultdict(str))
 
         self.periodic_callbacks = {
             'identifier': (1, self._process_identify_queue),
-            'voicer': (10, self._process_voice_queue),
-            'inviter': (10, self._process_invite_queue),
+            'voicer': (15, self._process_voice_queue),
+            'inviter': (15, self._process_invite_queue),
         }
 
         self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
@@ -128,15 +130,18 @@ class CorpHandler(DefaultCommandHandler):
                     break
                 nick = nicks.pop()
                 self._identify(nick)
+                self.identify_sent.update([nick.lower()])
                 break
 
     def _process_mode_queue(self, queue, callback):
         if len(queue) > 0:
             logging.info('[moder] %r' % queue)
             for chan, nicks in queue.items():
-                partial = list(nicks)[:5]
-                callback(chan, partial)
-                queue[chan] -= set(partial)
+                authed = set([n for n in nicks if self.perms[chan][n]])
+                pending = list(nicks - authed)[:8]
+                callback(chan, pending)
+                queue[chan] -= set(pending)
+                queue[chan] -= authed
                 if len(queue[chan]) == 0:
                     del(queue[chan])
 
@@ -166,7 +171,13 @@ class CorpHandler(DefaultCommandHandler):
             self._identify(nick)
 
     def namreply(self, nick, chan, equals, channel, nicklist):
-        nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
+        for n in nicklist.split():
+            if n[0] in '+@%~&':
+                self.perms[channel][n[1:]] = n[0]
+            else:
+                self.perms[channel][n] = ''
+
+        nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split())
         logging.info("[namreply] %s -> %r" % (channel, nicks))
         self.to_identify[channel].update(nicks)
 
@@ -196,7 +207,7 @@ class CorpHandler(DefaultCommandHandler):
         if modes:
             self.client.send('MODE', s['nick'], modes)
 
-        time.sleep(5)
+        time.sleep(10)
         for corp in self.corps.itervalues():
             if corp['server'] == self.client.host:
                 helpers.join(self.client, corp['channel'])
@@ -233,10 +244,17 @@ class CorpHandler(DefaultCommandHandler):
         self._mode(chan, 'I', nicks)
 
     def _mode(self, chan, mode, nicks):
+        if len(nicks) == 0:
+            return
+
         modes = '+%s' % (mode*len(nicks))
         self.client.send("MODE", chan, modes, " ".join(nicks))
 
     def _identify(self, nick):
+        if nick in self.identify_sent:
+            logging.info("Not reidentifying %s" % nick)
+            return
+
         self._msg(config['servers'][self.client.host]['auth']['to'],
                   'acc %s *' % nick)
 
@@ -269,6 +287,7 @@ class CorpHandler(DefaultCommandHandler):
             m = re.search(r'(\S+) -> .* ACC (\d)', msg)
             if m is not None:
                 user = m.group(1).lower()
+                self.identify_sent.discard(user)
                 if m.group(2) == "3":
                     self.identified[user] = 1
                     self._enforce(user)
