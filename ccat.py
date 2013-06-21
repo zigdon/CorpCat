@@ -118,10 +118,14 @@ class CorpHandler(DefaultCommandHandler):
 
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
-            for chan, nicks in self.to_identify.iteritems():
-                for nick in nicks:
-                    self._identify(nick)
-                self.to_identify[chan] -= nicks
+            for chan, nicks in self.to_identify.items():
+                logging.info('[id_queue] %s, %r' % (chan, nicks))
+                if len(nicks) == 0:
+                    del(self.to_identify[chan])
+                    break
+                nick = nicks.pop()
+                self._identify(nick)
+                break
 
     def _process_mode_queue(self, queue, callback):
         if len(queue) > 0:
