@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # vim: set ts=4 sw=4:
-from collections import defaultdict, deque
+from collections import defaultdict
 import datetime
 import functools
 import logging
@@ -86,10 +86,14 @@ class CorpHandler(DefaultCommandHandler):
         self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
 
         self.identified = defaultdict(None)
-        self.to_identify = deque()
+        self.to_identify = defaultdict(set)
+        self.to_invite = defaultdict(set)
+        self.to_voice = defaultdict(set)
 
         self.periodic_callbacks = {
             'identifier': self._process_identify_queue,
+            'voicer': self._process_voice_queue,
+            'inviter': self._process_invite_queue,
         }
 
         self.periodic_thread = threading.Thread(target=self._periodic_callback, name='periodic')
@@ -114,8 +118,26 @@ class CorpHandler(DefaultCommandHandler):
 
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
-            nick, chan = self.to_identify.popleft()
-            self._identify(nick)
+            for chan, nicks in self.to_identify.iteritems():
+                for nick in nicks:
+                    self._identify(nick)
+                self.to_identify[chan] -= nicks
+
+    def _process_mode_queue(self, queue, callback):
+        if len(queue) > 0:
+            logging.info('[moder] %r' % queue)
+            for chan, nicks in queue.items():
+                partial = list(nicks)[:5]
+                callback(chan, partial)
+                queue[chan] -= set(partial)
+                if len(queue[chan]) == 0:
+                    del(queue[chan])
+
+    def _process_voice_queue(self):
+        self._process_mode_queue(self.to_voice, self._voice)
+
+    def _process_invite_queue(self):
+        self._process_mode_queue(self.to_invite, self._auto_invite)
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -139,7 +161,7 @@ class CorpHandler(DefaultCommandHandler):
     def namreply(self, nick, chan, equals, channel, nicklist):
         nicks = set(x.lstrip('+@%~&').lower() for x in nicklist.split() if x[0] not in '+@%~&')
         logging.info("[namreply] %s -> %r" % (channel, nicks))
-        self.to_identify.extend((nick, channel) for nick in nicks)
+        self.to_identify[channel].update(nicks)
 
 
     def part(self, nick, chan):
@@ -196,32 +218,31 @@ class CorpHandler(DefaultCommandHandler):
     def _kick(self, chan, nick, msg):
         self.client.send("KICK", chan, nick, ":%s" % msg)
 
-    def _voice(self, chan, nick):
-        self.client.send("MODE", chan, '+v', nick)
+    def _voice(self, chan, nicks):
+        logging.info('[voice] %r: %r' % (chan, nicks))
+        self._mode(chan, 'v', nicks)
 
-    def _auto_invite(self, chan, nick):
-        self.client.send("MODE", chan, '+I', nick)
+    def _auto_invite(self, chan, nicks):
+        self._mode(chan, 'I', nicks)
+
+    def _mode(self, chan, mode, nicks):
+        modes = '+%s' % (mode*len(nicks))
+        self.client.send("MODE", chan, modes, " ".join(nicks))
 
     def _identify(self, nick):
-        if nick in self.identified:
-            self._enforce(nick)
-            return True
-
         self._msg(config['servers'][self.client.host]['auth']['to'],
                   'acc %s *' % nick)
-
-        return False
 
     def _enforce(self, nick):
         logging.info('Enforcing %s (identify=%d)' % (nick, self.identified[nick]))
         for tag, corp in self.corps.iteritems():
             logging.info('corp=%s, action=%s, channel=%s' % (tag, corp['action'], corp['channel']))
             if corp['action'] == 'voice' and self.identified[nick] and access.is_allowed(tag, nick):
-                    self._voice(corp['channel'], nick)
+                    self.to_voice[corp['channel']].update([nick])
             elif corp['action'] == 'kick' and not (self.identified[nick] and access.is_allowed(tag, nick)):
                 self._kick(corp['channel'], nick, 'This channel is restricted. /msg me "help id" for details.')
             elif corp['action'] == 'invite' and self.identified[nick] and access.is_allowed(tag, nick):
-                self._auto_invite(corp['channel'], nick)
+                self.to_invite[corp['channel']].update([nick])
 
     def _parse_line(self, nick, chan, msg):
         """Parse an incoming line of chat for commands and URLs."""
@@ -238,7 +259,7 @@ class CorpHandler(DefaultCommandHandler):
 
         if chan.lower() == config['servers'][self.client.host]['auth']['to'].lower():
             logging.info("[nickserv] %s" % msg)
-            m = re.search(r'([-\w]+) -> .* ACC (\d)', msg)
+            m = re.search(r'(\S+) -> .* ACC (\d)', msg)
             if m is not None:
                 user = m.group(1).lower()
                 if m.group(2) == "3":
