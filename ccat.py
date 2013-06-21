@@ -238,7 +238,7 @@ class CorpHandler(DefaultCommandHandler):
 
         if chan.lower() == config['servers'][self.client.host]['auth']['to'].lower():
             logging.info("[nickserv] %s" % msg)
-            m = re.search(r'(\w+) -> .* ACC (\d)', msg)
+            m = re.search(r'([-\w]+) -> .* ACC (\d)', msg)
             if m is not None:
                 user = m.group(1).lower()
                 if m.group(2) == "3":
