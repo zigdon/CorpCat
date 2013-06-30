@@ -23,9 +23,41 @@ class EveApiKeys(Module):
         words = msg.split()
         user = User(user)
 
+        if not isinstance(channel, User):
+            if words[0] == '%s:' % client.user.nick:
+                words = words[1:]
+                pm = False
+            else:
+                return
+        else:
+            pm = True
+
+
         cmd_func = '_cmd_%s' % words[0].upper()
         if hasattr(self, cmd_func):
-            getattr(self, cmd_func)(client, user, channel, words[1:])
+            msg = getattr(self, cmd_func)(client, user, channel, words[1:])
+
+            if msg:
+                if pm:
+                    client.msg(user, msg)
+                else:
+                    msg = '%s: %s' % (user.nick, msg)
+                    client.msg(channel, msg)
+
+
+    @admin_only
+    def _cmd_JOIN(self, client, user, channel, arg):
+        target = arg[0]
+        _log.info('Joining %s at the request of %s' % (target, user.nick))
+        client.join(target)
+        return 'Joining %s' % target
+
+    @admin_only
+    def _cmd_PART(self, client, user, channel, arg):
+        target = arg[0]
+        _log.info('Parting %s at the request of %s' % (target, user.nick))
+        client.part(target)
+        return 'Parting %s' % target
 
     @admin_only
     def _cmd_QUIT(self, client, user, channel, arg):
