@@ -362,7 +362,7 @@ class CorpHandler(DefaultCommandHandler):
 
     @pm_only
     def _cmd_DELKEY(self, nick, mask, chan, args):
-        """delkey <keyid> - delete an api key (PM only)."""
+        """delkey <keyid> - delete an api key (PM only). Will delete associated characters too."""
         usage = lambda: self._msg(chan, "Usage: delkey <keyid>.")
 
         if not args:
