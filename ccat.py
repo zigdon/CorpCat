@@ -17,7 +17,7 @@ import yaml
 import time
 import threading
 
-from corpaccess import CorpAccess
+from corpaccess import CorpAccess, EveKeyError
 from corpschema import CorpSchema
 
 ircevents.numeric_events["335"] = 'whoisbot'
@@ -341,7 +341,7 @@ class CorpHandler(DefaultCommandHandler):
     @pm_only
     def _cmd_ADDKEY(self, nick, mask, chan, args):
         """addkey <keyid> <vcode> - add an api key for a person (PM only). Create a key at http://api.eveonline.com"""
-        usage = lambda: self._msg(chan, "Usage: add key <keyid> <vcode>.")
+        usage = lambda: self._msg(chan, "Usage: addkey <keyid> <vcode>.")
 
         if not args:
             return usage()
@@ -353,9 +353,26 @@ class CorpHandler(DefaultCommandHandler):
 
         person = access.get_person(nick, mask)
         self._msg(chan, "Loading key...")
-        access.add_key(person, key_id, vcode)
-        self._identify(nick)
-        self._msg(chan, "Key loaded.")
+        try:
+            access.add_key(person, key_id, vcode)
+            self._identify(nick)
+            self._msg(chan, "Key loaded.")
+        except EveKeyError as e:
+            self._msg(chan, e.message)
+
+    @pm_only
+    def _cmd_DELKEY(self, nick, mask, chan, args):
+        """delkey <keyid> - delete an api key (PM only)."""
+        usage = lambda: self._msg(chan, "Usage: delkey <keyid>.")
+
+        if not args:
+            return usage()
+
+        person = access.get_person(nick, mask)
+        if access.del_key(person, args):
+            self._msg(chan, "Key removed.")
+        else:
+            self._msg(chan, "Key not found.")
 
     def _cmd_ID(self, nick, mask, chan, args):
         """identify [<nick>] - check again if nick is known. A nick is considered known if it has an an api key added (help addkey) and is identified with NickServ."""
@@ -437,7 +454,7 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
 
     app = IRCApp()
-    schema = CorpSchema(config)
+    schema = CorpSchema(config['database']['path'])
     access = CorpAccess(config, schema)
     clients = {}
 

@@ -5,8 +5,8 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 class CorpSchema(object):
-    def __init__(self, config):
-        engine = create_engine('sqlite:///%s' % config['database']['path'])
+    def __init__(self, path):
+        engine = create_engine('sqlite:///%s' % path)
         Base.metadata.create_all(engine)
         self.session = sessionmaker(bind=engine)()
 
@@ -17,7 +17,7 @@ class CorpSchema(object):
         nick = Column(String, nullable=False)
         hostmask = Column(String, nullable=False)
 
-        keys = relationship("ApiKey", backref="person")
+        keys = relationship("ApiKey", backref="person", cascade="all, delete, delete-orphan")
 
         def __init__(self, nick, hostmask):
             self.nick = nick
@@ -36,7 +36,7 @@ class CorpSchema(object):
         expires = Column(Integer, nullable=False)
         personid = Column(Integer, ForeignKey('people.id'))
 
-        characters = relationship("Character", backref="api")
+        characters = relationship("Character", backref="api", cascade="all, delete, delete-orphan")
 
         def __init__(self, key_id, vcode, access_mask, type, expires):
             self.keyid = key_id

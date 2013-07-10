@@ -12,6 +12,9 @@ from sqlalchemy import func
 
 cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
 
+class EveKeyError(Exception):
+    pass
+
 class CorpAccess(object):
     def __init__(self, config, schema):
         self.schema = schema
@@ -58,9 +61,9 @@ class CorpAccess(object):
             api = evelink.api.API(api_key=(key_id, vcode), cache=cache)
             account = evelink.account.Account(api=api)
             result = account.key_info()
-        except evelink.api.APIError as e:
+        except Exception as e:
             logging.warn("Error loading api key(%s, %s): %s" % (key_id, vcode, e))
-            return None
+            raise EveKeyError("Error loading key: %s" % e)
 
         if result:
             if result['expire_ts']:
@@ -73,7 +76,7 @@ class CorpAccess(object):
                          ", ".join(char['name'] for char in result['characters'].itervalues())))
         else:
             logging.warn("Invalid key")
-            return None
+            raise EveKeyError("Invalid key.")
 
         try:
             key = self.schema.ApiKey(key_id, vcode, result['access_mask'], result['type'], expire)
@@ -89,10 +92,20 @@ class CorpAccess(object):
 
             self.session.add(key)
             self.session.commit()
-        except Exception:
+        except Exception as e:
             self.session.rollback()
+            raise EveKeyError("Database error: %s" % e)
 
         return key
 
+    def del_key(self, person, key_id):
+        key = self.session.query(self.schema.ApiKey).get(key_id)
+        if key and key.personid == person.id:
+            self.session.delete(key)
+            self.session.commit()
+            return True
+        else:
+            self.session.rollback()
+            return False
 
 
