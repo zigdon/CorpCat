@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# vim: set ts=4 sw=4:
 
 import argparse
 import logging
 
 import kitnirc.client
 import kitnirc.modular
+import kitnirc.contrib.admintools
 
 def main():
     parser = argparse.ArgumentParser(description="CorpCat")
@@ -18,12 +18,18 @@ def main():
         "%(levelname)s %(asctime)s %(name)s:%(lineno)04d - %(message)s")
     log_handler.setFormatter(log_formatter)
 
-    root_logger = logging.getLogger()
-    root_logger.addHandler(log_handler)
-    root_logger.setLevel(logging.DEBUG)
+    _log = logging.getLogger()
+    _log.addHandler(log_handler)
+    _log.setLevel(logging.DEBUG)
 
     client = kitnirc.client.Client()
     c = kitnirc.modular.Controller(client, args.config)
+
+    def is_admin(controller, client, user):
+        _log.info('checking if %s is admin' % user)
+        return any(user == admin for admin, level in controller.config.items('admin'))
+    kitnirc.contrib.admintools.is_admin = is_admin
+
     c.start()
 
     nick = c.config.get('server', 'nick')
@@ -38,3 +44,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# vim: set ts=4 sw=4:
