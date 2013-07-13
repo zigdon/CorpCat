@@ -14,14 +14,14 @@ class CorpSchema(object):
         __tablename__ = 'people'
 
         id = Column(Integer, primary_key=True)
-        nick = Column(String, nullable=False)
-        hostmask = Column(String, nullable=False)
+        nick = Column(String, nullable=True)
+        account = Column(String, nullable=True)
 
         keys = relationship("ApiKey", backref="person")
 
-        def __init__(self, nick, hostmask):
+        def __init__(self, nick, account):
             self.nick = nick
-            self.hostmask = hostmask
+            self.account = account
 
         def __repr__(self):
             return "<Person('%s')>" % self.nick

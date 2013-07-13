@@ -32,6 +32,14 @@ class EveApiKeys(Module):
 
         self.schema = None
 
+    @Module.handle("WELCOME")
+    def autojoin(self, client, *params):
+        channels = self.controller.config.items('channels')
+        _log.info('Autojoining %d channels.' % len(channels))
+
+        for channel, _ in channels:
+            client.join('#' + channel)
+
     @Module.handle("PRIVMSG")
     def cmd_dispatch(self, client, user, channel, msg):
         words = msg.split()
