@@ -5,8 +5,8 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 class CorpSchema(object):
-    def __init__(self, config):
-        engine = create_engine('sqlite:///%s' % config['database']['path'])
+    def __init__(self, path):
+        engine = create_engine('sqlite:///%s' % path)
         Base.metadata.create_all(engine)
         self.session = sessionmaker(bind=engine)()
 
