@@ -6,6 +6,7 @@ from kitnirc.user import User
 from kitnirc.contrib.admintools import AdminModule
 
 from corpschema import CorpSchema
+from pprint import pprint
 
 _log = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def admin_only(f):
         if AdminModule.is_admin(user):
             return f(self, client, user, chan, arg)
         else:
-            _log.info("%s not allowed to run %s" % (nick, f))
+            _log.info("%s not allowed to run %s" % (user, f))
 
     return wrapper
 
@@ -31,6 +32,11 @@ class EveApiKeys(Module):
         super(EveApiKeys, self).stop(reloading)
 
         self.schema = None
+
+    @Module.handle("MEMBERS")
+    def members(self, client, channel):
+        for nick, user in channel.members.iteritems():
+            print "%s: %r" % (nick, user.modes)
 
     @Module.handle("WELCOME")
     def autojoin(self, client, *params):
