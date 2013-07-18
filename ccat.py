@@ -85,7 +85,6 @@ class CorpHandler(DefaultCommandHandler):
         # Highlight - match "<nick>: <msg>" or "<nick>, <msg>"
         self.HIGHLIGHT_RE = re.compile(r"^([\w^`[\]|-]+)[:,]\s*(.+)$")
 
-        self.identified = defaultdict(None)
         self.to_identify = defaultdict(set)
         self.identify_sent = set()
         self.to_invite = defaultdict(set)
@@ -133,23 +132,25 @@ class CorpHandler(DefaultCommandHandler):
                 self.identify_sent.update([nick.lower()])
                 break
 
-    def _process_mode_queue(self, queue, callback):
+    def _process_mode_queue(self, queue, sigil, callback):
         if len(queue) > 0:
-            logging.info('[moder] %r' % queue)
+            logging.info('[moder +%s] %r' % (sigil, queue))
             for chan, nicks in queue.items():
-                authed = set([n for n in nicks if self.perms[chan][n]])
+                authed = set([n.lower() for n in nicks if self.perms[chan][n]])
                 pending = list(nicks - authed)[:8]
-                callback(chan, pending)
+                if pending:
+                    callback(chan, pending)
                 queue[chan] -= set(pending)
                 queue[chan] -= authed
+                self.perms[chan].update((n.lower(), sigil) for n in pending)
                 if len(queue[chan]) == 0:
                     del(queue[chan])
 
     def _process_voice_queue(self):
-        self._process_mode_queue(self.to_voice, self._voice)
+        self._process_mode_queue(self.to_voice, "v", self._voice)
 
     def _process_invite_queue(self):
-        self._process_mode_queue(self.to_invite, self._auto_invite)
+        self._process_mode_queue(self.to_invite, "I", self._auto_invite)
 
     def nick(self, nick, newnick):
         """Process server's notification of a nick change."""
@@ -161,6 +162,11 @@ class CorpHandler(DefaultCommandHandler):
                 userlist.discard(nick)
                 userlist.add(newnick)
 
+        for chan in self.perms:
+            if nick in self.perms[chan]:
+                self.perms[chan][newnick] = self.perms[chan][nick]
+                del(self.perms[chan][nick])
+
     def join(self, nick, chan):
         """When a user joins a channel..."""
         nick = nick.split('!')[0]
@@ -171,7 +177,7 @@ class CorpHandler(DefaultCommandHandler):
             self._identify(nick)
 
     def namreply(self, nick, chan, equals, channel, nicklist):
-        for n in nicklist.split():
+        for n in nicklist.lower().split():
             if n[0] in '+@%~&':
                 self.perms[channel][n[1:]] = n[0]
             else:
@@ -185,7 +191,7 @@ class CorpHandler(DefaultCommandHandler):
     def part(self, nick, chan):
         logging.info("[part] %s -> %s" % (nick, chan))
         try:
-            del(self.identified[nick.lower()])
+            del(self.perms[chan][nick.lower()])
         except KeyError:
             pass
 
@@ -258,15 +264,15 @@ class CorpHandler(DefaultCommandHandler):
         self._msg(config['servers'][self.client.host]['auth']['to'],
                   'acc %s *' % nick)
 
-    def _enforce(self, nick):
-        logging.info('Enforcing %s (identify=%d)' % (nick, self.identified[nick]))
+    def _enforce(self, nick, identified):
+        logging.info('Enforcing %s (identify=%d)' % (nick, identified))
         for tag, corp in self.corps.iteritems():
             logging.info('corp=%s, action=%s, channel=%s' % (tag, corp['action'], corp['channel']))
-            if corp['action'] == 'voice' and self.identified[nick] and access.is_allowed(tag, nick):
+            if corp['action'] == 'voice' and identified and access.is_allowed(tag, nick):
                     self.to_voice[corp['channel']].update([nick])
-            elif corp['action'] == 'kick' and not (self.identified[nick] and access.is_allowed(tag, nick)):
+            elif corp['action'] == 'kick' and not (identified and access.is_allowed(tag, nick)):
                 self._kick(corp['channel'], nick, 'This channel is restricted. /msg me "help id" for details.')
-            elif corp['action'] == 'invite' and self.identified[nick] and access.is_allowed(tag, nick):
+            elif corp['action'] == 'invite' and identified and access.is_allowed(tag, nick):
                 self.to_invite[corp['channel']].update([nick])
 
     def _parse_line(self, nick, chan, msg):
@@ -284,15 +290,14 @@ class CorpHandler(DefaultCommandHandler):
 
         if chan.lower() == config['servers'][self.client.host]['auth']['to'].lower():
             logging.info("[nickserv] %s" % msg)
-            m = re.search(r'(\S+) -> .* ACC (\d)', msg)
+            m = re.search(r'.* -> (\S+) ACC (\d)', msg)
             if m is not None:
                 user = m.group(1).lower()
                 self.identify_sent.discard(user)
                 if m.group(2) == "3":
-                    self.identified[user] = 1
-                    self._enforce(user)
+                    self._enforce(user, True)
                 else:
-                    del(self.identified[user])
+                    self._enforce(user, False)
 
             return
 
