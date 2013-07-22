@@ -118,8 +118,8 @@ class CorpHandler(DefaultCommandHandler):
                 duration = time.time() - start
 
                 # Run no more often than once a second
-                if duration < 1.0:
-                    time.sleep(1.0 - duration)
+                if duration < 2.0:
+                    time.sleep(2.0 - duration)
 
     def _process_identify_queue(self):
         if len(self.to_identify) > 0:
