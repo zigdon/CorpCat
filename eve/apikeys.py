@@ -6,9 +6,9 @@ from kitnirc.user import User
 from kitnirc.contrib.admintools import AdminModule
 
 from corpschema import CorpSchema
-from pprint import pprint
 
 _log = logging.getLogger(__name__)
+_id_queue = set()
 
 def admin_only(f):
     @functools.wraps(f)
@@ -36,7 +36,14 @@ class EveApiKeys(Module):
     @Module.handle("MEMBERS")
     def members(self, client, channel):
         for nick, user in channel.members.iteritems():
-            print "%s: %r" % (nick, user.modes)
+            if user.modes:
+                _log.info("%s/%s: skipping, already has rights (%r)" %
+                    (channel, nick, user.modes))
+                continue
+            _log.info("%s/%s: queuing for identification" % (channel, nick))
+            _id_queue.add((client.server.host, channel.name, nick))
+
+        print "id queue:\n%r" % _id_queue
 
     @Module.handle("WELCOME")
     def autojoin(self, client, *params):
