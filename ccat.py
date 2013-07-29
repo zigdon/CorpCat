@@ -193,7 +193,7 @@ class CorpHandler(DefaultCommandHandler):
         try:
             del(self.perms[chan][nick.lower()])
         except KeyError:
-            pass
+            logging.info("Couldn't clear %s's perms in %s: %r" % (nick, chan, self.perms))
 
     def welcome(self, nick, chan, msg):
         """Trigger on-login actions via the WELCOME event."""
