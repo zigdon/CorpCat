@@ -10,7 +10,7 @@ import evelink.cache.shelf
 
 from sqlalchemy import func
 
-cache=evelink.cache.shelf.ShelveCache("/tmp/evecache")
+cache=evelink.cache.shelf.ShelveCache(".evecache")
 
 class EveKeyError(Exception):
     pass
@@ -38,9 +38,10 @@ class CorpAccess(object):
         return corps.intersection(self.config['corps'][tag]['allowed'])
 
     def get_person(self, nick, mask):
-        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==nick).first()
+        person = self.session.query(self.schema.Person).\
+                 filter(func.lower(self.schema.Person.nick)==nick.lower()).first()
         if person is None:
-            person = self.schema.Person(nick, mask)
+            person = self.schema.Person(nick.lower(), mask)
 
         self.session.add(person)
         self.session.commit()
@@ -48,7 +49,7 @@ class CorpAccess(object):
         return person
 
     def search(self, args):
-        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==args).first()
+        person = self.session.query(self.schema.Person).filter(self.schema.Person.nick==args.lower()).first()
         if person is None:
             chars = self.session.query(self.schema.Character).filter(self.schema.Character.name.like("%%%s%%" % args)).all()
         else:
