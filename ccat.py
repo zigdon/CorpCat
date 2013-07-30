@@ -189,6 +189,7 @@ class CorpHandler(DefaultCommandHandler):
 
 
     def part(self, nick, chan):
+        nick = nick.split('!')[0]
         logging.info("[part] %s -> %s" % (nick, chan))
         try:
             del(self.perms[chan][nick.lower()])
