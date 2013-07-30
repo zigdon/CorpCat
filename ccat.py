@@ -196,6 +196,15 @@ class CorpHandler(DefaultCommandHandler):
         except KeyError:
             logging.info("Couldn't clear %s's perms in %s: %r" % (nick, chan, self.perms))
 
+    def quit(self, nick, message=None):
+        nick = nick.split('!')[0]
+        logging.info("[quit] %s" % nick)
+        for chan in self.perms:
+            try:
+                del(self.perms[chan][nick.lower()])
+            except KeyError:
+                pass
+
     def welcome(self, nick, chan, msg):
         """Trigger on-login actions via the WELCOME event."""
         s = config['servers'][self.client.host]
