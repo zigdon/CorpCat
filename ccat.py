@@ -138,6 +138,9 @@ class CorpHandler(DefaultCommandHandler):
             for chan, nicks in queue.items():
                 authed = set([n.lower() for n in nicks if self.perms[chan][n]])
                 pending = list(nicks - authed)[:8]
+                logging.info('[set math] nicks: %r' % nicks)
+                logging.info('[set math] authed: %r' % authed)
+                logging.info('[set math] pending: %r' % pending)
                 if pending:
                     callback(chan, pending)
                 queue[chan] -= set(pending)
