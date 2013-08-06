@@ -277,15 +277,15 @@ class CorpHandler(DefaultCommandHandler):
         self._msg(config['servers'][self.client.host]['auth']['to'],
                   'acc %s *' % nick)
 
-    def _enforce(self, nick, identified):
-        logging.info('Enforcing %s (identify=%d)' % (nick, identified))
+    def _enforce(self, user, nick, identified):
+        logging.info('Enforcing %s (%s) (identify=%d)' % (user, nick, identified))
         for tag, corp in self.corps.iteritems():
             logging.info('corp=%s, action=%s, channel=%s' % (tag, corp['action'], corp['channel']))
-            if corp['action'] == 'voice' and identified and access.is_allowed(tag, nick):
+            if corp['action'] == 'voice' and identified and access.is_allowed(tag, user):
                     self.to_voice[corp['channel']].update([nick])
-            elif corp['action'] == 'kick' and not (identified and access.is_allowed(tag, nick)):
+            elif corp['action'] == 'kick' and not (identified and access.is_allowed(tag, user)):
                 self._kick(corp['channel'], nick, 'This channel is restricted. /msg me "help id" for details.')
-            elif corp['action'] == 'invite' and identified and access.is_allowed(tag, nick):
+            elif corp['action'] == 'invite' and identified and access.is_allowed(tag, user):
                 self.to_invite[corp['channel']].update([nick])
 
     def _parse_line(self, nick, chan, msg):
@@ -303,14 +303,15 @@ class CorpHandler(DefaultCommandHandler):
 
         if chan.lower() == config['servers'][self.client.host]['auth']['to'].lower():
             logging.info("[nickserv] %s" % msg)
-            m = re.search(r'.* -> (\S+) ACC (\d)', msg)
+            m = re.search(r'(.*) -> (\S+) ACC (\d)', msg)
             if m is not None:
-                user = m.group(1).lower()
-                self.identify_sent.discard(user)
-                if m.group(2) == "3":
-                    self._enforce(user, True)
+                nick = m.group(1).lower()
+                user = m.group(2).lower()
+                self.identify_sent.discard(nick)
+                if m.group(3) == "3":
+                    self._enforce(user, nick, True)
                 else:
-                    self._enforce(user, False)
+                    self._enforce(user, nick, False)
 
             return
 
